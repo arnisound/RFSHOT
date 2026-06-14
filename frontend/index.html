@@ -331,6 +331,20 @@ const MC=['#185FA5','#993556','#3B6D11','#854F0B','#534AB7','#0F6E56','#D85A30',
 const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{}};
 const BACKEND='http://localhost:3001';
 
+// Réglages de coordination (onglet Plan auto) : la distance entre émetteurs
+// fixe une garde IM « auto » (espacés ⇒ IM faibles ⇒ garde resserrée), que
+// l'utilisateur peut surcharger. imGuardMHz() est la garde effective utilisée
+// partout (génération + ajout de micros). Déclaré tôt : utilisé au chargement.
+const DIST_GUARD={tight:0.22,near:0.15,far:0.07};      // serrés / ~2 m / éloignés
+const GUARD_MODE={tight:0.08,normal:0.15,large:0.22};  // surcharge manuelle
+function imGuardMHz(){
+  const gm=S.guardMode||'auto';
+  if(gm!=='auto'&&GUARD_MODE[gm]!=null) return GUARD_MODE[gm];
+  return DIST_GUARD[S.txDist||'near'];
+}
+// Fréquences réservées « Global » (intercom, HF invités…) évitées par tous les plans.
+function globalReserved(){ return (S.reservedGlobal||[]).filter(f=>isFinite(f)).map(f=>({freq:f,sp:0.2})); }
+
 // ── Import de scans de spectre RF (CSV multi-logiciels) ───────────────
 // Cf. lib/rfshot-scan.js. Parse les exports de Shure Wireless Workbench,
 // Sennheiser WSM, RF Explorer, tinySA, etc. — tous convergent vers un CSV
@@ -1002,20 +1016,6 @@ updateGuardInfo();
 // TNT 470–694 (selon canaux libres), PMSE 823–832, bande libre 863–865,
 // PMSE 1.8 GHz 1785–1805, systèmes 2.4 GHz. Le reste est interdit.
 const PLAN_BANDS=[[470,694],[822,838],[863,865],[1785,1805],[2400,2483.5]];
-
-// Réglages de coordination (onglet Plan auto) : la distance entre émetteurs
-// fixe une garde IM « auto » (espacés ⇒ IM faibles ⇒ garde resserrée), que
-// l'utilisateur peut surcharger. imGuardMHz() est la garde effective utilisée
-// partout (génération + ajout de micros).
-const DIST_GUARD={tight:0.22,near:0.15,far:0.07};      // serrés / ~2 m / éloignés
-const GUARD_MODE={tight:0.08,normal:0.15,large:0.22};  // surcharge manuelle
-function imGuardMHz(){
-  const gm=S.guardMode||'auto';
-  if(gm!=='auto'&&GUARD_MODE[gm]!=null) return GUARD_MODE[gm];
-  return DIST_GUARD[S.txDist||'near'];
-}
-// Fréquences réservées « Global » (intercom, HF invités…) évitées par tous les plans.
-function globalReserved(){ return (S.reservedGlobal||[]).filter(f=>isFinite(f)).map(f=>({freq:f,sp:0.2})); }
 
 // opts.adv     : mode avancé — aucune IM 3 sources (fA+fB−fC) tolérée sur une
 //                porteuse, et IM5 à 3 sources minimisées en plus.
