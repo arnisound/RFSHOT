@@ -45,6 +45,12 @@ select{padding:5px 8px;border:0.5px solid var(--border2);border-radius:var(--rad
 .btn-purple{background:var(--purple);border-color:var(--purple);color:#fff}.btn-purple:hover{background:#3C3489}
 .btn-xs{padding:3px 7px;font-size:11px}
 .sep{width:0.5px;height:20px;background:var(--border)}
+/* Bascule Standard / Avancé */
+.modesw{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden}
+.modesw button{border:none;background:transparent;color:var(--text2);font-size:11px;font-weight:600;padding:4px 11px;cursor:pointer}
+.modesw button.on{background:var(--purple);color:#fff}
+/* Éléments réservés au mode Avancé : masqués en mode Standard */
+body.mode-std .adv-only{display:none !important}
 label.chk{font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;cursor:pointer}
 .add-bar{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius);padding:7px 10px;gap:8px}
 
@@ -125,6 +131,10 @@ tr:hover td{background:var(--bg2)}
   <div class="logo">RF&nbsp;<span>SHOT</span></div>
   <div class="header-sub">Coordinateur PMSE · France · 470–694 & 822–838 MHz</div>
   <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+    <div class="modesw" id="modeSw" title="Standard : plan simple (~30 liaisons). Avancé : groupes, coordination par zone et options expert (100+ liaisons).">
+      <button data-mode="std" class="on">Standard</button>
+      <button data-mode="adv">Avancé</button>
+    </div>
     <div class="backend-pill off" id="backendPill">
       <div class="pulse"></div><span id="backendTxt">Données Arcom en direct</span>
     </div>
@@ -167,7 +177,7 @@ tr:hover td{background:var(--bg2)}
     <select id="selModel" style="max-width:180px" disabled><option value="">— Modèle —</option></select>
     <select id="selBand" style="max-width:190px" disabled><option value="">— Gamme —</option></select>
     <input type="number" id="micCount" min="1" max="50" value="1" title="Nombre de micros" style="width:60px">
-    <select id="grpSelMic" class="grpSel" title="Groupe d'affectation des nouveaux micros" style="max-width:150px"></select>
+    <select id="grpSelMic" class="grpSel adv-only" title="Groupe d'affectation des nouveaux micros" style="max-width:150px"></select>
     <button class="btn btn-green" id="addBtn"><i class="ti ti-plus"></i> Ajouter</button>
     <span id="hint" style="font-size:11px;color:var(--text2)"></span>
     <span id="addErr" style="font-size:11px;color:var(--red);display:none"></span>
@@ -180,7 +190,7 @@ tr:hover td{background:var(--bg2)}
     <select id="selModelI" style="max-width:180px" disabled><option value="">— Modèle —</option></select>
     <select id="selBandI" style="max-width:190px" disabled><option value="">— Gamme —</option></select>
     <input type="number" id="iemCount" min="1" max="50" value="1" title="Nombre de retours IEM" style="width:60px">
-    <select id="grpSelIem" class="grpSel" title="Groupe d'affectation des nouveaux retours" style="max-width:150px"></select>
+    <select id="grpSelIem" class="grpSel adv-only" title="Groupe d'affectation des nouveaux retours" style="max-width:150px"></select>
     <button class="btn btn-green" id="addIemBtn"><i class="ti ti-plus"></i> Ajouter</button>
     <span id="hintI" style="font-size:11px;color:var(--text2)"></span>
     <span id="addErrI" style="font-size:11px;color:var(--red);display:none"></span>
@@ -197,7 +207,7 @@ tr:hover td{background:var(--bg2)}
   <div class="tab on" data-t="table"><i class="ti ti-table"></i> Tableau</div>
   <div class="tab" data-t="spectrum"><i class="ti ti-wave-sine"></i> Spectre</div>
   <div class="tab" data-t="plan"><i class="ti ti-wand"></i> Plan auto</div>
-  <div class="tab" data-t="groups"><i class="ti ti-layout-grid"></i> Groupes</div>
+  <div class="tab adv-only" data-t="groups"><i class="ti ti-layout-grid"></i> Groupes</div>
   <div class="tab" data-t="fplan"><i class="ti ti-edit"></i> Plan fréquences</div>
 </div>
 
@@ -219,7 +229,7 @@ tr:hover td{background:var(--bg2)}
       <button class="btn btn-xs" id="scanClear" style="display:none;border-color:var(--red);color:var(--red)"><i class="ti ti-x"></i> Retirer</button>
     </div>
     <div id="imBarSpec" class="im-bar" style="margin-bottom:8px"></div>
-    <div id="grpChips" class="im-bar" style="margin-bottom:8px;display:none"></div>
+    <div id="grpChips" class="im-bar adv-only" style="margin-bottom:8px;display:none"></div>
     <canvas id="cv" height="230" aria-label="Spectre UHF 470–694 MHz"></canvas>
     <div class="leg">
       <div class="leg-i"><div class="leg-b" style="background:rgba(163,45,45,.2);border:1px solid #A32D2D"></div>Canal TNT occupé</div>
@@ -248,7 +258,7 @@ tr:hover td{background:var(--bg2)}
       <button class="btn btn-xs" id="regenBtn" style="display:none" title="Propose un autre plan équivalent (tirage différent)"><i class="ti ti-refresh"></i> Régénérer</button>
       <button class="btn btn-xs btn-green" id="applyBtn" style="display:none"><i class="ti ti-check"></i> Appliquer aux micros</button>
     </div>
-    <div class="trow" style="gap:14px;margin-bottom:12px;font-size:11px;color:var(--text2)">
+    <div class="trow adv-only" style="gap:14px;margin-bottom:12px;font-size:11px;color:var(--text2)">
       <label style="display:flex;align-items:center;gap:5px" title="Émetteurs espacés ⇒ IM plus faibles ⇒ garde resserrée (plus de capacité). Serrés ⇒ garde élargie (plus sûr).">Distance émetteurs
         <select id="setTxDist">
           <option value="tight">Serrés (&lt; 0,5 m)</option>
@@ -328,7 +338,7 @@ tr:hover td{background:var(--bg2)}
 
 <script>
 const MC=['#185FA5','#993556','#3B6D11','#854F0B','#534AB7','#0F6E56','#D85A30','#0C447C'];
-const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{}};
+const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{},mode:'std'};
 const BACKEND='http://localhost:3001';
 
 // Réglages de coordination (onglet Plan auto) : la distance entre émetteurs
@@ -575,6 +585,22 @@ function showTab(id){
   document.querySelector(`[data-t="${id}"]`).classList.add('on');
   document.getElementById('pane-'+id).classList.add('on');
 }
+
+// ── MODE Standard / Avancé ────────────────────────────────────────────
+// Standard : plan de fréquences simple (~30 liaisons), tout coordonné — sans
+// groupes ni options expert. Avancé : groupes, coordination par zone, garde IM
+// réglable, fréquences réservées… (techniciens chevronnés, 100+ liaisons).
+function applyMode(m){
+  S.mode=(m==='adv')?'adv':'std';
+  document.body.classList.toggle('mode-std',S.mode==='std');
+  document.body.classList.toggle('mode-adv',S.mode==='adv');
+  document.querySelectorAll('#modeSw button').forEach(b=>b.classList.toggle('on',b.dataset.mode===S.mode));
+  try{ localStorage.setItem('rfshot-mode',S.mode); }catch(e){}
+  // en Standard, l'onglet Groupes est masqué : repli sur le Tableau si actif
+  if(S.mode==='std'&&document.querySelector('[data-t="groups"]').classList.contains('on')) showTab('table');
+}
+document.querySelectorAll('#modeSw button').forEach(b=>b.onclick=()=>applyMode(b.dataset.mode));
+applyMode((()=>{ try{ return localStorage.getItem('rfshot-mode'); }catch(e){ return null; } })()||'std');
 
 // ── GEO ──────────────────────────────────────────────────────────────
 // Géocodage direct ville / code postal -> coordonnées via l'API BAN
