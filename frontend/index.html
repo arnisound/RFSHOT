@@ -276,6 +276,22 @@ tr:hover td{background:var(--bg2)}
       </label>
       <span id="guardInfo" style="color:var(--text3)"></span>
     </div>
+    <div class="adv-only" style="border-top:1px solid var(--border);padding-top:10px;margin-bottom:12px">
+      <div class="trow" style="gap:8px;font-size:11px;color:var(--text2);flex-wrap:wrap">
+        <i class="ti ti-ban"></i> Zones d'exclusion (MHz) — évitées partout :
+        <input type="number" id="exclLo" step="0.1" placeholder="de" style="width:80px;font-family:monospace">
+        <input type="number" id="exclHi" step="0.1" placeholder="à" style="width:80px;font-family:monospace">
+        <input type="text" id="exclLbl" placeholder="motif (ex. intercom)" style="width:150px">
+        <button class="btn btn-xs" id="exclAdd"><i class="ti ti-plus"></i> Exclure</button>
+        <span id="exclList" style="display:flex;gap:5px;flex-wrap:wrap"></span>
+      </div>
+      <div class="trow" style="gap:8px;font-size:11px;color:var(--text2);margin-top:8px">
+        <i class="ti ti-stack-2"></i> Fréquences de secours :
+        <input type="number" id="spareN" min="0" max="20" value="0" style="width:60px" title="Nombre de fréquences de réserve coordonnées à calculer">
+        <button class="btn btn-xs" id="spareBtn"><i class="ti ti-calculator"></i> Calculer les secours</button>
+        <span id="spareOut" style="color:var(--text3)"></span>
+      </div>
+    </div>
     <div id="planOut" style="color:var(--text2);font-size:12px">Analysez TNT + ajoutez vos modèles de micros, puis cliquez Générer.</div>
   </div>
 </div>
@@ -338,7 +354,7 @@ tr:hover td{background:var(--bg2)}
 
 <script>
 const MC=['#185FA5','#993556','#3B6D11','#854F0B','#534AB7','#0F6E56','#D85A30','#0C447C'];
-const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{},mode:'std'};
+const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{},mode:'std',exclZones:[],spareN:0};
 const BACKEND='http://localhost:3001';
 
 // Réglages de coordination (onglet Plan auto) : la distance entre émetteurs
@@ -354,6 +370,9 @@ function imGuardMHz(){
 }
 // Fréquences réservées « Global » (intercom, HF invités…) évitées par tous les plans.
 function globalReserved(){ return (S.reservedGlobal||[]).filter(f=>isFinite(f)).map(f=>({freq:f,sp:0.2})); }
+// Zones d'exclusion manuelles (MHz) : plages à éviter partout, en plus du scan TNT
+// (radios locales, intercom, autres prods…). Traitées comme des canaux occupés.
+function exclSpans(){ return (S.exclZones||[]).filter(z=>isFinite(z.lo)&&isFinite(z.hi)&&z.hi>z.lo).map(z=>({s:z.lo,e:z.hi})); }
 
 // ── Import de scans de spectre RF (CSV multi-logiciels) ───────────────
 // Cf. lib/rfshot-scan.js. Parse les exports de Shure Wireless Workbench,
@@ -925,7 +944,7 @@ function autoAssign(fmin,fmax,sp,group){
   group=group||S.curGroup||'Groupe 1';
   const newM={group};                 // micro virtuel pour tester la coexistence
   const minGap=(sp||350)/1000; // espacement demandé (MHz)
-  const occ=S.ch.filter(c=>c.occupied).map(c=>({s:c.freq_start,e:c.freq_end}));
+  const occ=S.ch.filter(c=>c.occupied).map(c=>({s:c.freq_start,e:c.freq_end})).concat(exclSpans());
   // n'évite QUE les micros qui coexistent (même zone, ou Global) : un groupe
   // indépendant peut réutiliser les fréquences des autres groupes.
   const g=imGuardMHz();
@@ -1038,6 +1057,34 @@ document.getElementById('setTxDist').onchange=e=>{S.txDist=e.target.value;update
 document.getElementById('setGuard').onchange=e=>{S.guardMode=e.target.value;updateGuardInfo();};
 updateGuardInfo();
 
+// ── Zones d'exclusion manuelles ───────────────────────────────────────
+function renderExcl(){
+  const el=document.getElementById('exclList'); if(!el) return;
+  el.innerHTML=(S.exclZones||[]).map((z,i)=>`<span class="gchip" data-excl="${i}" title="Retirer">${z.lo}–${z.hi}${z.label?' · '+z.label:''} ✕</span>`).join('');
+  el.querySelectorAll('[data-excl]').forEach(c=>c.onclick=()=>{S.exclZones.splice(parseInt(c.dataset.excl),1);renderExcl();computeIM();renderAll();});
+}
+document.getElementById('exclAdd').onclick=()=>{
+  const lo=parseFloat(document.getElementById('exclLo').value),hi=parseFloat(document.getElementById('exclHi').value);
+  if(!isFinite(lo)||!isFinite(hi)||hi<=lo){ setSt('Plage d\'exclusion invalide (de < à).'); return; }
+  S.exclZones.push({lo:parseFloat(lo.toFixed(3)),hi:parseFloat(hi.toFixed(3)),label:(document.getElementById('exclLbl').value||'').trim()});
+  S.exclZones.sort((a,b)=>a.lo-b.lo);
+  document.getElementById('exclLo').value='';document.getElementById('exclHi').value='';document.getElementById('exclLbl').value='';
+  renderExcl(); computeIM(); renderAll(); setSt(`Plage ${lo}–${hi} MHz exclue partout.`);
+};
+
+// ── Fréquences de secours (plan global) ───────────────────────────────
+document.getElementById('spareN').onchange=e=>{ S.spareN=Math.max(0,parseInt(e.target.value)||0); };
+document.getElementById('spareBtn').onclick=()=>{
+  const out=document.getElementById('spareOut');
+  const n=Math.max(0,parseInt(document.getElementById('spareN').value)||0); S.spareN=n;
+  if(!n){ out.innerHTML='Indiquez un nombre de secours.'; return; }
+  if(!S.mics.length||!S.ch.length){ out.innerHTML='<span style="color:var(--red)">Générez d\'abord un plan.</span>'; return; }
+  const sp=sparesFor(S.mics.map((m,i)=>i),n);
+  out.innerHTML=sp.length
+    ? '<b style="color:var(--text)">Secours :</b> '+sp.map(f=>`<span class="gchip" title="Fréquence de réserve coordonnée">${f.toFixed(3)}</span>`).join(' ')+(sp.length<n?` <span style="color:var(--amber)">(${sp.length}/${n} trouvées)</span>`:'')
+    : '<span style="color:var(--amber)">Aucune fréquence de secours libre trouvée.</span>';
+};
+
 // Bandes légalement exploitables pour les micros HF en France (MHz) :
 // TNT 470–694 (selon canaux libres), PMSE 823–832, bande libre 863–865,
 // PMSE 1.8 GHz 1785–1805, systèmes 2.4 GHz. Le reste est interdit.
@@ -1059,7 +1106,7 @@ function generatePlan(opts){
   const pr=document.getElementById('planOut');
   if(!S.ch.length){if(render)pr.innerHTML='<span style="color:var(--red)">Lancez d\'abord l\'analyse TNT.</span>';return{placed:[],freqs:[],nOK:0,nKO:mics.length,adv,rob,max};}
   if(!mics.length){if(render)pr.innerHTML='<span style="color:var(--red)">Ajoutez d\'abord des micros / IEM.</span>';return{placed:[],freqs:[],nOK:0,nKO:0,adv,rob,max};}
-  const occZones=S.ch.filter(c=>c.occupied).map(c=>({s:c.freq_start,e:c.freq_end}));
+  const occZones=S.ch.filter(c=>c.occupied).map(c=>({s:c.freq_start,e:c.freq_end})).concat(exclSpans());
   const inOcc=f=>occZones.some(z=>f>=z.s&&f<z.e);
   const legal=f=>PLAN_BANDS.some(r=>f>=r[0]&&f<=r[1]);
   const nearOcc=f=>occZones.some(z=>f>z.s-0.3&&f<z.e+0.3);
@@ -1394,6 +1441,22 @@ function renderReserved(){
   el.querySelectorAll('[data-res]').forEach(c=>c.onclick=()=>{S.reservedGlobal.splice(parseInt(c.dataset.res),1);renderReserved();computeIM();renderAll();});
 }
 const micSp=m=>({freq:m.freq,sp:(m.spacing||350)/1000});
+// Fréquences de secours : n fréquences coordonnées (sans IM avec les porteuses
+// posées ni entre elles, hors TNT/réservées/exclusions), prêtes à basculer en
+// cas de brouillage. Réutilise le moteur via des micros « fantômes ».
+function sparesFor(idxs,n){
+  if(!n||!idxs.length) return [];
+  const inZone=new Set(idxs);
+  const carriers=S.mics.map((m,i)=>i)
+    .filter(i=>isFinite(S.mics[i].freq)&&(inZone.has(i)||idxs.some(j=>coexist(S.mics[i],S.mics[j]))))
+    .map(i=>micSp(S.mics[i]));
+  if(!carriers.length) return [];
+  const band=[Math.min(...idxs.map(i=>S.mics[i].fmin)),Math.max(...idxs.map(i=>S.mics[i].fmax))];
+  const sp=Math.max(0.4,...carriers.map(c=>c.sp||0.35));
+  const ghosts=Array.from({length:n},()=>({fmin:band[0],fmax:band[1],spacing:sp*1000,bw:200,freq:NaN,group:'__spare__'}));
+  const r=generatePlan({mics:ghosts,fixed:carriers,render:false,adv:!!S.planAdv,rob:!!S.planRob,max:!!S.planMax});
+  return r.placed.filter(f=>f!=null);
+}
 // régénère UNIQUEMENT la zone du groupe g, en évitant les fréquences de tous les
 // micros qui coexistent avec elle (notamment les « Global »), et laisse le reste.
 function generateZoneForGroup(g){
@@ -1453,6 +1516,8 @@ function generateGroupPlans(){
     const res=r.res3||0, imF=r.imFree||0;
     let rows=idxs.map((gi,k)=>{const m=S.mics[gi],f=r.placed[k];
       return `<div class="grp-mic"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span class="dot" style="background:${grpColor(m.group)||m.color}"></span>${m.name}</span><b style="font-family:monospace;color:${f!=null?(grpColor(m.group)||m.color):'var(--red)'}">${f!=null?f.toFixed(3):'—'}</b></div>`;}).join('');
+    const spares=S.spareN>0?sparesFor(idxs,S.spareN):[];
+    const spareRow=S.spareN>0?`<div style="margin-top:6px;font-size:11px;color:var(--text2)"><i class="ti ti-stack-2"></i> Secours : ${spares.length?spares.map(f=>`<span class="gchip">${f.toFixed(3)}</span>`).join(' '):'<span style="color:var(--amber)">aucun libre</span>'}</div>`:'';
     h+=`<div class="grp-card" style="border-left:3px solid ${accent}">
       <div style="font-weight:600;margin-bottom:6px;font-size:12px">${label}</div>
       <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px">
@@ -1460,7 +1525,7 @@ function generateGroupPlans(){
         ${res?`<span class="badge bWarn" title="IM 3 tons résiduelles sur porteuse">${res} IM3T</span>`:'<span class="badge bOK">0 IM porteuse</span>'}
         ${imF?`<span class="badge bWarn" title="IM en zone libre (hors canaux TV)">${imF} IM libre</span>`:''}
       </div>
-      <div class="grp-mics">${rows}</div>
+      <div class="grp-mics">${rows}</div>${spareRow}
     </div>`;
   });
   h+='</div>';
@@ -1490,7 +1555,7 @@ document.getElementById('resAdd').onclick=()=>{
   renderReserved(); renderAll(); setSt(`Fréquence ${v} MHz réservée partout.`);
 };
 ['grpSelMic','grpSelIem'].forEach(id=>{ const s=document.getElementById(id); if(s) s.onchange=()=>onGroupSelChange(s); });
-refreshGroupSelectors(); renderReserved();
+refreshGroupSelectors(); renderReserved(); renderExcl();
 
 // ── RENDER ────────────────────────────────────────────────────────────
 function renderAll(){
@@ -1792,6 +1857,13 @@ function drawSpec(){
     const x=fx(im.freq);if(x<0||x>W)return;
     ctx.strokeStyle='rgba(133,79,11,.7)';ctx.lineWidth=1.2;ctx.setLineDash([3,3]);
     ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,BH);ctx.stroke();ctx.setLineDash([]);
+  });
+
+  // zones d'exclusion manuelles : bandes rouges hachurées
+  exclSpans().forEach(z=>{ const x1=Math.max(fx(z.s),0),x2=Math.min(fx(z.e),W); if(x2<=x1) return;
+    ctx.fillStyle=dark?'rgba(163,45,45,.22)':'rgba(163,45,45,.14)';ctx.fillRect(x1,0,x2-x1,BH);
+    ctx.strokeStyle='rgba(163,45,45,.6)';ctx.lineWidth=1;ctx.setLineDash([3,3]);
+    ctx.beginPath();ctx.moveTo(x1,0);ctx.lineTo(x1,BH);ctx.moveTo(x2,0);ctx.lineTo(x2,BH);ctx.stroke();ctx.setLineDash([]);
   });
 
   // fréquences réservées partout (Global) : traits gris pointillés
