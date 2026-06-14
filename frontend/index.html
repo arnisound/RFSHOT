@@ -836,7 +836,7 @@ function addUnits(band,sp,count,model,brand,kind,err){
   const base=model+(band[0]?' '+band[0]:'');
   let added=0;
   for(let i=0;i<count;i++){
-    const freq=autoAssign(fmin,fmax,sp);
+    const freq=autoAssign(fmin,fmax,sp,S.curGroup);
     if(!freq){err.textContent=`Plus de fréquence libre dans cette gamme (${added}/${count} placés)`;err.style.display='inline';break;}
     const tntC=S.ch.find(c=>c.occupied&&freq>=c.freq_start&&freq<c.freq_end);
     S.mics.push({id:Date.now()+i,name:count>1?base+' '+(added+1):base,brand,model,band:band[0]||'',kind,freq,fmin,fmax,bw,spacing:sp,tntConflict:!!tntC,group:S.curGroup||'Groupe 1',color:MC[S.mics.length%MC.length],imHits:[]});
@@ -857,14 +857,18 @@ function maskMark(mask,f,half){
 }
 const maskHit=(mask,f)=>mask[Math.round(f*FGRID)]===1;
 
-function autoAssign(fmin,fmax,sp){
+function autoAssign(fmin,fmax,sp,group){
+  group=group||S.curGroup||'Groupe 1';
+  const newM={group};                 // micro virtuel pour tester la coexistence
   const minGap=(sp||350)/1000; // espacement demandé (MHz)
   const occ=S.ch.filter(c=>c.occupied).map(c=>({s:c.freq_start,e:c.freq_end}));
-  const used=S.mics.map(m=>({f:m.freq,sp:(m.spacing||350)/1000}));
+  // n'évite QUE les micros qui coexistent (même zone, ou Global) : un groupe
+  // indépendant peut réutiliser les fréquences des autres groupes.
+  const used=S.mics.filter(m=>coexist(m,newM)).map(m=>({f:m.freq,sp:(m.spacing||350)/1000}));
   // 2 tons : toujours bloquants. 3 tons (en n³) : évités si possible seulement,
   // sinon ils satureraient tout le spectre au-delà de ~16 micros.
   const im2=maskNew(),im3=maskNew(),carM=maskNew();
-  S.im.forEach(im=>{if(im.f3==null)maskMark(im2,im.freq,0.15);else maskMark(im3,im.freq,0.1);});
+  S.im.forEach(im=>{if(im.src&&!im.src.every(si=>coexist(S.mics[si],newM)))return;if(im.f3==null)maskMark(im2,im.freq,0.15);else maskMark(im3,im.freq,0.1);});
   used.forEach(u=>maskMark(carM,u.f,0.15));
   for(const strict of [true,false]){
     for(let f=fmin+0.3;f<=fmax-0.3;f+=0.025){
