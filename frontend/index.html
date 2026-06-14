@@ -73,6 +73,8 @@ td{padding:5px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap;v
 .grp-mics{display:flex;flex-direction:column;gap:3px;max-height:240px;overflow:auto}
 .grp-mic{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px}
 .grp-move{max-width:130px;font-size:11px;padding:2px 4px}
+.gchip{font-size:11px;padding:2px 9px;border:0.5px solid var(--border);border-radius:11px;cursor:pointer;background:var(--bg2);user-select:none}
+.gchip.off{opacity:.4;text-decoration:line-through}
 .im-bar .im-lbl{font-size:11px;font-weight:600;color:var(--text2)}
 tr:hover td{background:var(--bg2)}
 .badge{display:inline-flex;align-items:center;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:500;line-height:1.6}
@@ -217,6 +219,7 @@ tr:hover td{background:var(--bg2)}
       <button class="btn btn-xs" id="scanClear" style="display:none;border-color:var(--red);color:var(--red)"><i class="ti ti-x"></i> Retirer</button>
     </div>
     <div id="imBarSpec" class="im-bar" style="margin-bottom:8px"></div>
+    <div id="grpChips" class="im-bar" style="margin-bottom:8px;display:none"></div>
     <canvas id="cv" height="230" aria-label="Spectre UHF 470–694 MHz"></canvas>
     <div class="leg">
       <div class="leg-i"><div class="leg-b" style="background:rgba(163,45,45,.2);border:1px solid #A32D2D"></div>Canal TNT occupé</div>
@@ -301,7 +304,7 @@ tr:hover td{background:var(--bg2)}
 
 <script>
 const MC=['#185FA5','#993556','#3B6D11','#854F0B','#534AB7','#0F6E56','#D85A30','#0C447C'];
-const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1'};
+const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{}};
 const BACKEND='http://localhost:3001';
 
 // ── Import de scans de spectre RF (CSV multi-logiciels) ───────────────
@@ -525,7 +528,7 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
   document.querySelectorAll('.pane').forEach(x=>x.classList.remove('on'));
   t.classList.add('on');
   document.getElementById('pane-'+t.dataset.t).classList.add('on');
-  if(t.dataset.t==='spectrum') drawSpec();
+  if(t.dataset.t==='spectrum'){ renderGroupChips(); drawSpec(); }
   if(t.dataset.t==='groups') renderGroups();
 }));
 function showTab(id){
@@ -892,44 +895,52 @@ function autoAssign(fmin,fmax,sp){
 document.getElementById('clearBtn').onclick=()=>{S.mics=[];S.im=[];S.planSlots=[];renderAll();setSt('Micros effacés');};
 
 // ── IM ────────────────────────────────────────────────────────────────
-// Zone de coordination d'un micro : les groupes d'un même « Ensemble » (cf.
-// onglet Groupes) se coordonnent ensemble ; sinon chaque groupe est sa propre
-// zone (indépendant, fréquences réutilisables). Seuls les micros d'une même
-// zone génèrent des IM entre eux.
-function zoneOf(m){
-  const z=S.groupZones[m.group];
-  return (z&&z!=='indep')?('E:'+z):('G:'+(m.group||'—'));
+// Coordination d'un micro selon son groupe (cf. onglet Groupes) :
+//   'global'  : réservé partout — coexiste (donc IM) avec TOUS les autres
+//   'indep'   : sa propre zone (groupe seul)
+//   'A'..'F'  : « Ensemble » partagé (groupes coordonnés ensemble)
+// Par défaut (non réglé) => global.
+function micCoord(m){ return S.groupZones[m.group]||'global'; }
+function zoneKeyOfMic(m){ const z=micCoord(m); return z==='indep'?('G:'+(m.group||'—')):('E:'+z); }
+// deux micros coexistent (peuvent se gêner / générer des IM) si l'un est global,
+// ou s'ils partagent la même zone (même Ensemble, ou même groupe si indépendant).
+function coexist(a,b){
+  const za=micCoord(a),zb=micCoord(b);
+  if(za==='global'||zb==='global') return true;
+  return zoneKeyOfMic(a)===zoneKeyOfMic(b);
 }
 function computeIM(){
   S.im=[];
   const F=S.mics.map(m=>m.freq);
-  const Z=S.mics.map(m=>zoneOf(m));
-  function push(ord,type,f1,f2,freq,f3){
+  // produit tagué par ses micros sources (src) -> on n'attribuera un conflit
+  // qu'aux micros qui coexistent avec TOUTES ses sources (corrige les faux
+  // 3TX entre zones indépendantes qui réutilisent les mêmes fréquences).
+  function push(ord,type,src,freq){
     const f=parseFloat(freq.toFixed(3));
-    if(f>200) S.im.push({ord,type,f1,f2,f3,freq:f});
+    if(f>200) S.im.push({ord,type,src,freq:f,f1:F[src[0]],f2:F[src[1]],f3:src.length>2?F[src[2]]:null});
   }
+  const M=S.mics;
   for(let i=0;i<F.length;i++){
     for(let j=i+1;j<F.length;j++){
-      if(Z[i]!==Z[j]) continue;          // zones indépendantes : pas d'IM entre elles
+      if(!coexist(M[i],M[j])) continue;
       const a=F[i],b=F[j];
-      push(3,`2f${L(i)}-f${L(j)}`,a,b,2*a-b);
-      push(3,`2f${L(j)}-f${L(i)}`,a,b,2*b-a);
-      push(5,`3f${L(i)}-2f${L(j)}`,a,b,3*a-2*b);
-      push(5,`3f${L(j)}-2f${L(i)}`,a,b,3*b-2*a);
+      push(3,`2f${L(i)}-f${L(j)}`,[i,j],2*a-b);
+      push(3,`2f${L(j)}-f${L(i)}`,[i,j],2*b-a);
+      push(5,`3f${L(i)}-2f${L(j)}`,[i,j],3*a-2*b);
+      push(5,`3f${L(j)}-2f${L(i)}`,[i,j],3*b-2*a);
       for(let k=j+1;k<F.length;k++){
-        if(Z[k]!==Z[i]) continue;
+        if(!coexist(M[i],M[k])||!coexist(M[j],M[k])) continue;
         const c=F[k];
-        push(3,`f${L(i)}+f${L(j)}-f${L(k)}`,a,b,a+b-c,c);
-        push(3,`f${L(i)}+f${L(k)}-f${L(j)}`,a,b,a+c-b,c);
-        push(3,`f${L(j)}+f${L(k)}-f${L(i)}`,a,b,b+c-a,c);
+        push(3,`f${L(i)}+f${L(j)}-f${L(k)}`,[i,j,k],a+b-c);
+        push(3,`f${L(i)}+f${L(k)}-f${L(j)}`,[i,j,k],a+c-b);
+        push(3,`f${L(j)}+f${L(k)}-f${L(i)}`,[i,j,k],b+c-a);
       }
     }
   }
   S.mics.forEach(m=>{
-    // 2 tons (2fA−fB…) : critiques. 3 tons (fA+fB−fC) : plus rares (3 émetteurs
-    // simultanés), comptés à part avec une fenêtre plus étroite.
-    m.imHits=S.im.filter(im=>im.f3==null&&Math.abs(im.freq-m.freq)<0.15);
-    m.imHits3=S.im.filter(im=>im.f3!=null&&Math.abs(im.freq-m.freq)<0.1);
+    const rel=im=>im.src.every(si=>coexist(M[si],m)); // produit pertinent pour ce micro
+    m.imHits=S.im.filter(im=>im.f3==null&&rel(im)&&Math.abs(im.freq-m.freq)<0.15);
+    m.imHits3=S.im.filter(im=>im.f3!=null&&rel(im)&&Math.abs(im.freq-m.freq)<0.1);
   });
 }
 function L(i){return String.fromCharCode(65+i);}
@@ -1020,6 +1031,14 @@ function generatePlan(opts){
     }
     placed[idx]=freq; setF.push({freq,sp}); maskMark(carMask,freq,GUARD);
   }
+  // porteuse externe imposée (ex. fréquences « Global » réservées partout) : même
+  // mise à jour des masques que commit(), mais sans entrée dans placed.
+  function seedFixed(freq,sp){
+    for(const c of setF) for(const im of pairIM(freq,c.freq)){ maskMark(imMask,im,GUARD); const ch=chOf(im); if(ch!=null&&legal(im)&&!inOcc(im)) polluted.add(ch); }
+    for(let i=0;i<setF.length;i++)for(let j=i+1;j<setF.length;j++){ const a=setF[i].freq,b=setF[j].freq; for(const im of [freq+a-b,freq+b-a,a+b-freq]) maskMark(im3Mask,im,GUARD3); if(adv) for(const im of tri5(freq,a,b)) maskMark(im53Mask,im,GUARD53); }
+    setF.push({freq,sp}); maskMark(carMask,freq,GUARD);
+  }
+  (opts.fixed||[]).forEach(fx=>{ if(isFinite(fx.freq)) seedFixed(fx.freq,fx.sp||0.35); });
 
   // porteuses verrouillées : pré-placées à leur fréquence actuelle. Les autres
   // micros devront les contourner et éviter d'y créer des IM.
@@ -1180,7 +1199,8 @@ function applyPlan(){
 }
 
 // ── GROUPES & COORDINATION PAR ZONE ───────────────────────────────────
-const ZONE_OPTS=['indep','A','B','C','D','E','F'];
+const ZONE_OPTS=['global','indep','A','B','C','D','E','F'];
+const ZONE_LABEL=z=>z==='global'?'Global (réservé partout)':(z==='indep'?'Indépendant':'Ensemble '+z);
 // garantit une liste de groupes cohérente (inclut les groupes vides + ceux des micros)
 function ensureGroups(){
   if(!Array.isArray(S.groups)) S.groups=[];
@@ -1247,7 +1267,7 @@ function renderGroups(){
   </div><div class="grp-cards">`;
   S.groups.forEach(g=>{
     const micsG=S.mics.filter(m=>(m.group||'Groupe 1')===g);
-    const z=S.groupZones[g]||'indep', ge=g.replace(/"/g,'&quot;');
+    const z=S.groupZones[g]||'global', ge=g.replace(/"/g,'&quot;');
     const body=micsG.length? micsG.map(m=>`
         <div class="grp-mic">
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span class="dot" style="background:${m.color}"></span>${m.name} <b style="font-family:monospace;color:var(--text2)">${m.freq}</b></span>
@@ -1263,7 +1283,7 @@ function renderGroups(){
       </div>
       <div class="grp-card-row">
         <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">Coord.
-          <select data-grp-zone="${ge}">${ZONE_OPTS.map(o=>`<option value="${o}"${o===z?' selected':''}>${o==='indep'?'Indépendant':'Ensemble '+o}</option>`).join('')}</select>
+          <select data-grp-zone="${ge}">${ZONE_OPTS.map(o=>`<option value="${o}"${o===z?' selected':''}>${ZONE_LABEL(o)}</option>`).join('')}</select>
         </label>
         <button class="btn btn-xs" data-grp-gen="${ge}" title="Génère les fréquences de cette zone sans toucher aux autres groupes"><i class="ti ti-wand"></i> Générer</button>
         <button class="btn btn-xs" data-grp-del="${ge}" style="border-color:var(--red);color:var(--red)" title="Supprimer ce groupe (ses micros rejoignent un autre groupe)"><i class="ti ti-trash"></i></button>
@@ -1283,42 +1303,69 @@ function wireGroups(){
   document.querySelectorAll('[data-grp-del]').forEach(b=>b.onclick=()=>deleteGroup(b.dataset.grpDel));
   document.querySelectorAll('.grp-move').forEach(sel=>sel.onchange=()=>setMicGroup(parseInt(sel.dataset.mic),sel.value));
 }
-// régénère UNIQUEMENT la zone du groupe g (lui + ses éventuels co-ensembles),
-// applique les fréquences à ces micros et laisse tous les autres inchangés.
+const micSp=m=>({freq:m.freq,sp:(m.spacing||350)/1000});
+// régénère UNIQUEMENT la zone du groupe g, en évitant les fréquences de tous les
+// micros qui coexistent avec elle (notamment les « Global »), et laisse le reste.
 function generateZoneForGroup(g){
   if(!S.ch.length){ setSt('Lancez d\'abord l\'analyse TNT.'); return; }
-  const zk=zoneKeyOfGroup(g);
-  const idxs=S.mics.map((m,i)=>i).filter(i=>zoneOf(S.mics[i])===zk);
+  let idxs;
+  if((S.groupZones[g]||'global')==='global')
+    idxs=S.mics.map((m,i)=>i).filter(i=>micCoord(S.mics[i])==='global');
+  else { const zk=zoneKeyOfMic({group:g}); idxs=S.mics.map((m,i)=>i).filter(i=>micCoord(S.mics[i])!=='global'&&zoneKeyOfMic(S.mics[i])===zk); }
   if(!idxs.length){ setSt('Aucun micro dans cette zone.'); return; }
+  const inZone=new Set(idxs);
+  // contraintes : tout micro placé hors zone qui coexiste avec elle (= Global, ou
+  // tout le monde si on régénère la zone Global)
+  const fixed=S.mics.map((m,i)=>i).filter(i=>!inZone.has(i)&&isFinite(S.mics[i].freq)&&idxs.some(j=>coexist(S.mics[i],S.mics[j]))).map(i=>micSp(S.mics[i]));
   const sub=idxs.map(i=>S.mics[i]);
-  const r=generatePlan({mics:sub,render:false,adv:!!S.planAdv,rob:!!S.planRob,max:!!S.planMax});
+  const r=generatePlan({mics:sub,render:false,fixed,adv:!!S.planAdv,rob:!!S.planRob,max:!!S.planMax});
   let n=0; idxs.forEach((gi,k)=>{ if(r.placed[k]!=null){ S.mics[gi].freq=r.placed[k]; n++; } });
   computeIM(); renderAll(); renderGroups();
-  const z=S.groupZones[g];
-  const zlabel=(z&&z!=='indep')?('Ensemble '+z):('groupe « '+g+' »');
-  setSt(`Zone régénérée (${zlabel}) — ${n}/${idxs.length} fréquence(s). Les autres groupes n'ont pas bougé.`);
+  setSt(`Zone « ${ZONE_LABEL(S.groupZones[g]||'global')} » régénérée — ${n}/${idxs.length} fréquence(s). Les autres groupes n'ont pas bougé.`);
 }
-// régénère toutes les zones (chacune indépendamment) et applique
+// régénère toutes les zones et applique : Global d'abord (réservé partout), puis
+// chaque zone indépendante/ensemble en évitant les fréquences Global.
 function generateGroupPlans(){
   const out=document.getElementById('grpOut');
   if(!S.ch.length){ out.innerHTML='<span style="color:var(--red)">Lancez d\'abord l\'analyse TNT (onglet Tableau).</span>'; return; }
   if(!S.mics.length){ out.innerHTML='<span style="color:var(--red)">Ajoutez d\'abord des micros.</span>'; return; }
   const mode={adv:!!S.planAdv,rob:!!S.planRob,max:!!S.planMax};
-  const zmap={}; S.mics.forEach((m,i)=>{ const z=zoneOf(m); (zmap[z]=zmap[z]||[]).push(i); });
   let okT=0;
+  // 1) Global : coordonnés entre eux
+  const gIdx=S.mics.map((m,i)=>i).filter(i=>micCoord(S.mics[i])==='global');
+  if(gIdx.length){
+    const r=generatePlan({mics:gIdx.map(i=>S.mics[i]),render:false,adv:mode.adv,rob:mode.rob,max:mode.max});
+    gIdx.forEach((gi,k)=>{ if(r.placed[k]!=null){ S.mics[gi].freq=r.placed[k]; okT++; } });
+  }
+  const gFixed=gIdx.filter(i=>isFinite(S.mics[i].freq)).map(i=>micSp(S.mics[i]));
+  // 2) Zones non-globales, en évitant les fréquences Global
+  const zmap={}; S.mics.forEach((m,i)=>{ if(micCoord(m)==='global') return; (zmap[zoneKeyOfMic(m)]=zmap[zoneKeyOfMic(m)]||[]).push(i); });
   Object.keys(zmap).forEach(z=>{
-    const idxs=zmap[z], sub=idxs.map(i=>S.mics[i]);
-    const r=generatePlan({mics:sub,render:false,adv:mode.adv,rob:mode.rob,max:mode.max});
+    const idxs=zmap[z];
+    const r=generatePlan({mics:idxs.map(i=>S.mics[i]),render:false,fixed:gFixed,adv:mode.adv,rob:mode.rob,max:mode.max});
     idxs.forEach((gi,k)=>{ if(r.placed[k]!=null){ S.mics[gi].freq=r.placed[k]; okT++; } });
   });
   computeIM(); renderAll(); renderGroups();
-  const nZones=Object.keys(zmap).length;
+  const nZones=(gIdx.length?1:0)+Object.keys(zmap).length;
   out.innerHTML=`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     <span class="badge ${okT<S.mics.length?'bWarn':'bOK'}">${okT}/${S.mics.length} fréquences placées</span>
-    <span class="badge bMic">${nZones} zone(s) de coordination</span>
-    <span style="font-size:11px;color:var(--text2)">Appliqué. Les zones indépendantes réutilisent le spectre ; les fréquences verrouillées sont conservées.</span>
+    <span class="badge bMic">${nZones} zone(s)${gIdx.length?' (dont Global)':''}</span>
+    <span style="font-size:11px;color:var(--text2)">Appliqué. Les zones indépendantes réutilisent le spectre ; le Global est évité partout ; les verrous sont conservés.</span>
   </div>`;
   setSt(`Plan par zone appliqué — ${okT}/${S.mics.length} sur ${nZones} zone(s).`);
+}
+// Chips d'affichage/masquage des groupes dans le spectre (clic = bascule)
+function renderGroupChips(){
+  const el=document.getElementById('grpChips'); if(!el) return;
+  ensureGroups();
+  if(S.groups.length<=1){ el.innerHTML=''; el.style.display='none'; return; }
+  el.style.display='flex';
+  const anyHidden=S.groups.some(g=>S.hiddenGroups[g]);
+  el.innerHTML='<span class="im-lbl">Groupes :</span>'
+    +S.groups.map(g=>`<span class="gchip${S.hiddenGroups[g]?' off':''}" data-gchip="${g.replace(/"/g,'&quot;')}" title="Afficher/masquer dans le spectre">${g}</span>`).join('')
+    +(anyHidden?'<span class="gchip" data-gchip-all="1" title="Tout réafficher"><i class="ti ti-eye"></i> tout</span>':'');
+  el.querySelectorAll('[data-gchip]').forEach(c=>c.onclick=()=>{const g=c.dataset.gchip;S.hiddenGroups[g]=!S.hiddenGroups[g];renderGroupChips();drawSpec();});
+  const all=el.querySelector('[data-gchip-all]'); if(all) all.onclick=()=>{S.hiddenGroups={};renderGroupChips();drawSpec();};
 }
 document.getElementById('grpGenBtn').onclick=generateGroupPlans;
 ['grpSelMic','grpSelIem'].forEach(id=>{ const s=document.getElementById(id); if(s) s.onchange=()=>onGroupSelChange(s); });
@@ -1336,6 +1383,7 @@ function renderAll(){
   syncImBars();
   const gp=document.getElementById('pane-groups');
   if(gp&&gp.classList.contains('on')) renderGroups();
+  renderGroupChips();
 }
 
 // Cellule « Émetteur » d'un canal TV : nom / lieu (distance) · mux
@@ -1605,33 +1653,36 @@ function drawSpec(){
   });
   const stripH=models.length?2+models.length*5+4:10;
 
-  // produits d'intermodulation
-  if(S.show5) S.im.filter(im=>im.ord===5&&(!S.onlyB||(im.freq>=FMIN&&im.freq<=FMAX))).forEach(im=>{
+  // produits d'intermodulation (masqués si un de leurs micros sources est caché)
+  const imVis=im=>!im.src||im.src.every(si=>!(S.mics[si]&&S.hiddenGroups[S.mics[si].group]));
+  if(S.show5) S.im.filter(im=>im.ord===5&&imVis(im)&&(!S.onlyB||(im.freq>=FMIN&&im.freq<=FMAX))).forEach(im=>{
     const x=fx(im.freq);if(x<0||x>W)return;
     ctx.strokeStyle='rgba(186,117,23,.5)';ctx.lineWidth=.8;ctx.setLineDash([2,4]);
     ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,BH);ctx.stroke();ctx.setLineDash([]);
   });
   // 3TX : produits 3 émetteurs (fA+fB−fC) — plus faibles, tracé fin violet
-  if(S.show3T) S.im.filter(im=>im.ord===3&&im.f3!=null&&(!S.onlyB||(im.freq>=FMIN&&im.freq<=FMAX))).forEach(im=>{
+  if(S.show3T) S.im.filter(im=>im.ord===3&&im.f3!=null&&imVis(im)&&(!S.onlyB||(im.freq>=FMIN&&im.freq<=FMAX))).forEach(im=>{
     const x=fx(im.freq);if(x<0||x>W)return;
     ctx.strokeStyle='rgba(83,74,183,.6)';ctx.lineWidth=.9;ctx.setLineDash([2,3]);
     ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,BH);ctx.stroke();ctx.setLineDash([]);
   });
   // IM3 : produits 2 émetteurs (2fA−fB) — les plus forts
-  if(S.show3) S.im.filter(im=>im.ord===3&&im.f3==null&&(!S.onlyB||(im.freq>=FMIN&&im.freq<=FMAX))).forEach(im=>{
+  if(S.show3) S.im.filter(im=>im.ord===3&&im.f3==null&&imVis(im)&&(!S.onlyB||(im.freq>=FMIN&&im.freq<=FMAX))).forEach(im=>{
     const x=fx(im.freq);if(x<0||x>W)return;
     ctx.strokeStyle='rgba(133,79,11,.7)';ctx.lineWidth=1.2;ctx.setLineDash([3,3]);
     ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,BH);ctx.stroke();ctx.setLineDash([]);
   });
 
-  // micros
+  // micros (les groupes masqués via les chips ne sont pas dessinés)
   S.mics.forEach((m,i)=>{
+    if(S.hiddenGroups[m.group])return;
     const xc=fx(m.freq);if(xc<0||xc>W)return;
     const bwPx=Math.abs(fx(m.freq+m.bw/2000)-xc);
     ctx.fillStyle=m.color+'22';ctx.fillRect(xc-bwPx,0,bwPx*2,BH);
     ctx.fillStyle=m.color;ctx.fillRect(xc-1.5,0,3,BH);
-    ctx.font='bold 11px sans-serif';ctx.textAlign='center';ctx.fillStyle=m.color;
-    ctx.fillText('M'+(i+1),xc,stripH+9);
+    // libellé légèrement décalé du trait pour rester lisible
+    ctx.font='bold 11px sans-serif';ctx.textAlign='left';ctx.fillStyle=m.color;
+    ctx.fillText('M'+(i+1),xc+4,stripH+8);
   });
 
   // scan de spectre importé (courbe mesurée, mise à l'échelle sur ses propres niveaux)
@@ -1660,7 +1711,7 @@ function drawSpec(){
   // cadenas des porteuses verrouillées : petit prolongement de ligne + cadenas
   // fin, placés SOUS l'échelle des fréquences pour rester lisibles.
   if(anyLock) S.mics.forEach(m=>{
-    if(!m.locked)return;
+    if(!m.locked||S.hiddenGroups[m.group])return;
     const x=fx(m.freq);if(x<0||x>W)return;
     ctx.strokeStyle=m.color;ctx.lineWidth=1;
     ctx.beginPath();ctx.moveTo(x,BH+18);ctx.lineTo(x,BH+24);ctx.stroke();
