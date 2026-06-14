@@ -65,6 +65,14 @@ td{padding:5px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap;v
 .r-im3t td{background:rgba(83,74,183,.05)}
 .r-im5 td{background:rgba(133,79,11,.02)}
 .im-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.grp-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px}
+.grp-card{border:0.5px solid var(--border);border-radius:var(--radius);padding:10px;background:var(--bg2)}
+.grp-card-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.grp-name{font-weight:600;flex:1;min-width:0;padding:3px 6px}
+.grp-card-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.grp-mics{display:flex;flex-direction:column;gap:3px;max-height:240px;overflow:auto}
+.grp-mic{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px}
+.grp-move{max-width:130px;font-size:11px;padding:2px 4px}
 .im-bar .im-lbl{font-size:11px;font-weight:600;color:var(--text2)}
 tr:hover td{background:var(--bg2)}
 .badge{display:inline-flex;align-items:center;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:500;line-height:1.6}
@@ -157,6 +165,7 @@ tr:hover td{background:var(--bg2)}
     <select id="selModel" style="max-width:180px" disabled><option value="">— Modèle —</option></select>
     <select id="selBand" style="max-width:190px" disabled><option value="">— Gamme —</option></select>
     <input type="number" id="micCount" min="1" max="50" value="1" title="Nombre de micros" style="width:60px">
+    <select id="grpSelMic" class="grpSel" title="Groupe d'affectation des nouveaux micros" style="max-width:150px"></select>
     <button class="btn btn-green" id="addBtn"><i class="ti ti-plus"></i> Ajouter</button>
     <span id="hint" style="font-size:11px;color:var(--text2)"></span>
     <span id="addErr" style="font-size:11px;color:var(--red);display:none"></span>
@@ -169,6 +178,7 @@ tr:hover td{background:var(--bg2)}
     <select id="selModelI" style="max-width:180px" disabled><option value="">— Modèle —</option></select>
     <select id="selBandI" style="max-width:190px" disabled><option value="">— Gamme —</option></select>
     <input type="number" id="iemCount" min="1" max="50" value="1" title="Nombre de retours IEM" style="width:60px">
+    <select id="grpSelIem" class="grpSel" title="Groupe d'affectation des nouveaux retours" style="max-width:150px"></select>
     <button class="btn btn-green" id="addIemBtn"><i class="ti ti-plus"></i> Ajouter</button>
     <span id="hintI" style="font-size:11px;color:var(--text2)"></span>
     <span id="addErrI" style="font-size:11px;color:var(--red);display:none"></span>
@@ -246,19 +256,16 @@ tr:hover td{background:var(--bg2)}
       <strong>Groupes & coordination</strong>
       <span style="font-size:11px;color:var(--text2)">Regroupez vos micros (scènes, zones…) et choisissez lesquels doivent être coordonnés ensemble.</span>
     </div>
-    <div style="font-size:11px;color:var(--text2);max-width:780px;margin-bottom:12px;line-height:1.5">
-      Deux groupes du même <b>Ensemble</b> sont coordonnés ensemble (pas d'IM entre eux).
-      Les groupes <b>Indépendants</b> (ou d'Ensembles différents) ne se gênent pas : ils peuvent
-      réutiliser les mêmes fréquences — utile pour des lieux éloignés ou des usages non simultanés.
-      Le bouton ci-dessous génère un plan <b>par zone</b> (réutilisation maximale) ; l'onglet
-      <b>Plan auto</b> reste le plan <b>global</b> (tout le monde coordonné, cas le plus sûr).
+    <div style="font-size:11px;color:var(--text2);max-width:820px;margin-bottom:12px;line-height:1.6">
+      <b>1.</b> Crée des groupes (« Nouveau groupe ») et ajoute tes micros au groupe choisi dans les barres <b>+ Micro / + IEM</b> — ou déplace-les via le menu de chaque carte.<br>
+      <b>2.</b> Règle la <b>Coordination</b> de chaque groupe : deux groupes du même <b>Ensemble</b> sont coordonnés ensemble (pas d'IM entre eux) ; les groupes <b>Indépendants</b> (ou d'Ensembles différents) ne se gênent pas et réutilisent les mêmes fréquences — pour des lieux éloignés ou des usages non simultanés.<br>
+      <b>3.</b> <b>Générer</b> sur une carte ne recalcule que cette zone (sans toucher aux autres) ; <b>Tout générer</b> recalcule toutes les zones. L'onglet <b>Plan auto</b> reste le plan <b>global</b> (tout coordonné, cas le plus sûr).
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-      <button class="btn btn-purple" id="grpGenBtn"><i class="ti ti-layout-grid"></i> Générer par groupe / zone</button>
-      <button class="btn btn-xs btn-green" id="grpApplyBtn" style="display:none"><i class="ti ti-check"></i> Appliquer aux micros</button>
+      <button class="btn btn-purple" id="grpGenBtn"><i class="ti ti-layout-grid"></i> Tout générer (toutes les zones)</button>
       <span style="font-size:11px;color:var(--text2)">Mode : <span id="grpMode" style="font-weight:600">standard</span> (réglé dans Plan auto)</span>
     </div>
-    <div class="tbl-sc" id="grpWrap"></div>
+    <div id="grpWrap"></div>
     <div id="grpOut" style="margin-top:14px"></div>
   </div>
 </div>
@@ -294,7 +301,7 @@ tr:hover td{background:var(--bg2)}
 
 <script>
 const MC=['#185FA5','#993556','#3B6D11','#854F0B','#534AB7','#0F6E56','#D85A30','#0C447C'];
-const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groupZones:{},curGroup:'Groupe 1'};
+const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1'};
 const BACKEND='http://localhost:3001';
 
 // ── Import de scans de spectre RF (CSV multi-logiciels) ───────────────
@@ -1173,99 +1180,149 @@ function applyPlan(){
 }
 
 // ── GROUPES & COORDINATION PAR ZONE ───────────────────────────────────
-function groupList(){
-  const set=[],seen=new Set();
-  S.mics.forEach(m=>{const g=m.group||'Groupe 1';if(!seen.has(g)){seen.add(g);set.push(g);}});
-  if(S.curGroup&&!seen.has(S.curGroup)) set.push(S.curGroup);
-  return set;
+const ZONE_OPTS=['indep','A','B','C','D','E','F'];
+// garantit une liste de groupes cohérente (inclut les groupes vides + ceux des micros)
+function ensureGroups(){
+  if(!Array.isArray(S.groups)) S.groups=[];
+  S.mics.forEach(m=>{const g=m.group||'Groupe 1'; if(!S.groups.includes(g)) S.groups.push(g);});
+  if(!S.groups.length) S.groups=['Groupe 1'];
+  if(!S.curGroup||!S.groups.includes(S.curGroup)) S.curGroup=S.groups[0];
 }
+function groupList(){ ensureGroups(); return S.groups.slice(); }
+// clé de zone de coordination d'un groupe (ensemble partagé sinon zone propre)
+function zoneKeyOfGroup(g){ const z=S.groupZones[g]; return (z&&z!=='indep')?('E:'+z):('G:'+g); }
+
+// remplit les sélecteurs « Groupe » des barres + Micro / + IEM
+function refreshGroupSelectors(){
+  ensureGroups();
+  ['grpSelMic','grpSelIem'].forEach(id=>{
+    const sel=document.getElementById(id); if(!sel) return;
+    sel.innerHTML=S.groups.map(g=>`<option value="${g.replace(/"/g,'&quot;')}"${g===S.curGroup?' selected':''}>${g}</option>`).join('')
+      +'<option value="__new__">＋ Nouveau groupe…</option>';
+  });
+}
+function onGroupSelChange(sel){
+  if(sel.value==='__new__'){ createGroup(); return; }
+  S.curGroup=sel.value; refreshGroupSelectors();
+}
+function createGroup(){
+  const n=(prompt('Nom du nouveau groupe :','Scène '+(S.groups.length+1))||'').trim();
+  if(!n){ refreshGroupSelectors(); return; }
+  if(!S.groups.includes(n)) S.groups.push(n);
+  S.curGroup=n; refreshGroupSelectors(); renderGroups();
+}
+function renameGroup(old,nw){
+  nw=(nw||'').trim(); if(!nw||nw===old){ renderGroups(); return; }
+  S.mics.forEach(m=>{ if((m.group||'Groupe 1')===old) m.group=nw; });
+  if(!S.groups.includes(nw)){ const i=S.groups.indexOf(old); if(i>=0) S.groups[i]=nw; }
+  else { S.groups=S.groups.filter(g=>g!==old); }      // fusion dans un groupe existant
+  if(S.groupZones[old]!=null){ if(S.groupZones[nw]==null) S.groupZones[nw]=S.groupZones[old]; delete S.groupZones[old]; }
+  if(S.curGroup===old) S.curGroup=nw;
+  computeIM(); refreshGroupSelectors(); renderAll(); renderGroups();
+}
+function deleteGroup(g){
+  ensureGroups();
+  if(S.groups.length<=1){ setSt('Au moins un groupe est requis.'); return; }
+  const fallback=S.groups.filter(x=>x!==g)[0];
+  S.mics.forEach(m=>{ if((m.group||'Groupe 1')===g) m.group=fallback; });
+  S.groups=S.groups.filter(x=>x!==g); delete S.groupZones[g];
+  if(S.curGroup===g) S.curGroup=fallback;
+  computeIM(); refreshGroupSelectors(); renderAll(); renderGroups();
+}
+function setMicGroup(id,g){
+  const m=S.mics.find(x=>x.id===id); if(!m) return;
+  m.group=g; if(!S.groups.includes(g)) S.groups.push(g);
+  computeIM(); renderAll(); renderGroups();
+}
+function setGroupZone(g,z){ S.groupZones[g]=z; computeIM(); renderAll(); renderGroups(); }
+
 function renderGroups(){
-  const w=document.getElementById('grpWrap');if(!w)return;
+  const w=document.getElementById('grpWrap'); if(!w) return;
+  ensureGroups();
   const mode=document.getElementById('grpMode');
   if(mode) mode.textContent=S.planMax?'capacité max':(S.planRob?'robuste':(S.planAdv?'avancé':'standard'));
-  const groups=groupList(),opts=['indep','A','B','C','D','E','F'];
-  let h=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-    <span style="font-size:11px;color:var(--text2)">Nouveaux micros → groupe :</span>
-    <input id="curGroup" list="grpNames" value="${(S.curGroup||'').replace(/"/g,'&quot;')}" style="width:160px">
-    <datalist id="grpNames">${groups.map(g=>`<option value="${g.replace(/"/g,'&quot;')}">`).join('')}</datalist>
-  </div>`;
-  if(!groups.length){w.innerHTML=h+'<div class="empty"><i class="ti ti-layout-grid"></i>Aucun groupe : ajoutez des micros.</div>';wireGroups();return;}
-  h+=`<table><thead><tr><th>Groupe</th><th>Micros</th><th>Coordination</th></tr></thead><tbody>`;
-  groups.forEach(g=>{
-    const n=S.mics.filter(m=>(m.group||'Groupe 1')===g).length;
-    const z=S.groupZones[g]||'indep';
-    const ge=g.replace(/"/g,'&quot;');
-    h+=`<tr>
-      <td><input type="text" value="${ge}" data-grp-ren="${ge}" style="width:160px"></td>
-      <td style="color:var(--text2)">${n}</td>
-      <td><select data-grp-zone="${ge}">${opts.map(o=>`<option value="${o}"${o===z?' selected':''}>${o==='indep'?'Indépendant':'Ensemble '+o}</option>`).join('')}</select></td>
-    </tr>`;
+  let h=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <button class="btn btn-xs" id="grpNewBtn"><i class="ti ti-plus"></i> Nouveau groupe</button>
+    <span style="font-size:11px;color:var(--text2)">Les micros s'ajoutent au groupe choisi dans les barres « + Micro / + IEM » (actuel : <b>${S.curGroup}</b>). Déplacez un micro avec le menu à droite de son nom.</span>
+  </div><div class="grp-cards">`;
+  S.groups.forEach(g=>{
+    const micsG=S.mics.filter(m=>(m.group||'Groupe 1')===g);
+    const z=S.groupZones[g]||'indep', ge=g.replace(/"/g,'&quot;');
+    const body=micsG.length? micsG.map(m=>`
+        <div class="grp-mic">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span class="dot" style="background:${m.color}"></span>${m.name} <b style="font-family:monospace;color:var(--text2)">${m.freq}</b></span>
+          <select class="grp-move" data-mic="${m.id}" title="Déplacer vers un autre groupe">
+            ${S.groups.map(gg=>`<option value="${gg.replace(/"/g,'&quot;')}"${gg===g?' selected':''}>→ ${gg}</option>`).join('')}
+          </select>
+        </div>`).join('')
+      : '<div style="font-size:11px;color:var(--text3);padding:4px 0">Vide — choisissez ce groupe dans « + Micro » puis ajoutez, ou déplacez-y un micro.</div>';
+    h+=`<div class="grp-card">
+      <div class="grp-card-h">
+        <input type="text" value="${ge}" data-grp-ren="${ge}" class="grp-name" title="Renommer le groupe">
+        <span class="badge bGrp">${micsG.length}</span>
+      </div>
+      <div class="grp-card-row">
+        <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">Coord.
+          <select data-grp-zone="${ge}">${ZONE_OPTS.map(o=>`<option value="${o}"${o===z?' selected':''}>${o==='indep'?'Indépendant':'Ensemble '+o}</option>`).join('')}</select>
+        </label>
+        <button class="btn btn-xs" data-grp-gen="${ge}" title="Génère les fréquences de cette zone sans toucher aux autres groupes"><i class="ti ti-wand"></i> Générer</button>
+        <button class="btn btn-xs" data-grp-del="${ge}" style="border-color:var(--red);color:var(--red)" title="Supprimer ce groupe (ses micros rejoignent un autre groupe)"><i class="ti ti-trash"></i></button>
+      </div>
+      <div class="grp-mics">${body}</div>
+    </div>`;
   });
-  h+='</tbody></table>';
-  w.innerHTML=h;wireGroups();
+  h+='</div>';
+  w.innerHTML=h;
+  wireGroups();
 }
 function wireGroups(){
-  const cg=document.getElementById('curGroup');
-  if(cg) cg.onchange=()=>{S.curGroup=cg.value.trim()||'Groupe 1';};
-  document.querySelectorAll('[data-grp-zone]').forEach(sel=>{
-    sel.onchange=()=>{S.groupZones[sel.dataset.grpZone]=sel.value;computeIM();renderAll();};
-  });
-  document.querySelectorAll('[data-grp-ren]').forEach(inp=>{
-    inp.onchange=()=>{
-      const old=inp.dataset.grpRen,nw=inp.value.trim();
-      if(!nw||nw===old){inp.value=old;return;}
-      S.mics.forEach(m=>{if((m.group||'Groupe 1')===old)m.group=nw;});
-      if(S.groupZones[old]!=null){S.groupZones[nw]=S.groupZones[old];delete S.groupZones[old];}
-      if(S.curGroup===old)S.curGroup=nw;
-      computeIM();renderAll();renderGroups();
-    };
-  });
+  const nb=document.getElementById('grpNewBtn'); if(nb) nb.onclick=createGroup;
+  document.querySelectorAll('[data-grp-ren]').forEach(inp=>inp.onchange=()=>renameGroup(inp.dataset.grpRen,inp.value));
+  document.querySelectorAll('[data-grp-zone]').forEach(sel=>sel.onchange=()=>setGroupZone(sel.dataset.grpZone,sel.value));
+  document.querySelectorAll('[data-grp-gen]').forEach(b=>b.onclick=()=>generateZoneForGroup(b.dataset.grpGen));
+  document.querySelectorAll('[data-grp-del]').forEach(b=>b.onclick=()=>deleteGroup(b.dataset.grpDel));
+  document.querySelectorAll('.grp-move').forEach(sel=>sel.onchange=()=>setMicGroup(parseInt(sel.dataset.mic),sel.value));
 }
+// régénère UNIQUEMENT la zone du groupe g (lui + ses éventuels co-ensembles),
+// applique les fréquences à ces micros et laisse tous les autres inchangés.
+function generateZoneForGroup(g){
+  if(!S.ch.length){ setSt('Lancez d\'abord l\'analyse TNT.'); return; }
+  const zk=zoneKeyOfGroup(g);
+  const idxs=S.mics.map((m,i)=>i).filter(i=>zoneOf(S.mics[i])===zk);
+  if(!idxs.length){ setSt('Aucun micro dans cette zone.'); return; }
+  const sub=idxs.map(i=>S.mics[i]);
+  const r=generatePlan({mics:sub,render:false,adv:!!S.planAdv,rob:!!S.planRob,max:!!S.planMax});
+  let n=0; idxs.forEach((gi,k)=>{ if(r.placed[k]!=null){ S.mics[gi].freq=r.placed[k]; n++; } });
+  computeIM(); renderAll(); renderGroups();
+  const z=S.groupZones[g];
+  const zlabel=(z&&z!=='indep')?('Ensemble '+z):('groupe « '+g+' »');
+  setSt(`Zone régénérée (${zlabel}) — ${n}/${idxs.length} fréquence(s). Les autres groupes n'ont pas bougé.`);
+}
+// régénère toutes les zones (chacune indépendamment) et applique
 function generateGroupPlans(){
   const out=document.getElementById('grpOut');
-  if(!S.ch.length){out.innerHTML='<span style="color:var(--red)">Lancez d\'abord l\'analyse TNT (onglet Tableau).</span>';return;}
-  if(!S.mics.length){out.innerHTML='<span style="color:var(--red)">Ajoutez d\'abord des micros.</span>';return;}
+  if(!S.ch.length){ out.innerHTML='<span style="color:var(--red)">Lancez d\'abord l\'analyse TNT (onglet Tableau).</span>'; return; }
+  if(!S.mics.length){ out.innerHTML='<span style="color:var(--red)">Ajoutez d\'abord des micros.</span>'; return; }
   const mode={adv:!!S.planAdv,rob:!!S.planRob,max:!!S.planMax};
-  const zmap={};
-  S.mics.forEach((m,i)=>{const z=zoneOf(m);(zmap[z]=zmap[z]||[]).push(i);});
-  const placedAll=new Array(S.mics.length).fill(null);
+  const zmap={}; S.mics.forEach((m,i)=>{ const z=zoneOf(m); (zmap[z]=zmap[z]||[]).push(i); });
+  let okT=0;
   Object.keys(zmap).forEach(z=>{
-    const idxs=zmap[z],sub=idxs.map(i=>S.mics[i]);
+    const idxs=zmap[z], sub=idxs.map(i=>S.mics[i]);
     const r=generatePlan({mics:sub,render:false,adv:mode.adv,rob:mode.rob,max:mode.max});
-    idxs.forEach((gi,k)=>placedAll[gi]=r.placed[k]);
+    idxs.forEach((gi,k)=>{ if(r.placed[k]!=null){ S.mics[gi].freq=r.placed[k]; okT++; } });
   });
-  S.grpPlaced=placedAll;
-  S.planSlots=S.mics.map((m,i)=>({freq:placedAll[i],name:m.name,off:placedAll[i]!=null&&!S.ch.some(c=>placedAll[i]>=c.freq_start&&placedAll[i]<c.freq_end)}));
-  const groups=groupList();
-  let okT=0,koT=0,grid='<div class="plan-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">';
-  groups.forEach(g=>{
-    const gi=S.mics.map((m,i)=>i).filter(i=>(S.mics[i].group||'Groupe 1')===g);
-    const z=S.groupZones[g]||'indep',zlabel=z==='indep'?'Indépendant':'Ensemble '+z;
-    let rows='';
-    gi.forEach(i=>{const f=placedAll[i],m=S.mics[i];if(f!=null)okT++;else koT++;
-      rows+=`<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:1px 0">
-        <span><span class="dot" style="background:${m.color}"></span>${m.name}</span>
-        <b style="font-family:monospace;color:${f!=null?m.color:'var(--red)'}">${f!=null?f.toFixed(3):'—'}</b></div>`;
-    });
-    grid+=`<div class="plan-slot mic"><div style="font-weight:600;margin-bottom:4px">${g} <span class="badge bMic" style="font-size:9px">${zlabel}</span></div>${rows}</div>`;
-  });
-  grid+='</div>';
-  const nZones=new Set(S.mics.map(zoneOf)).size;
-  out.innerHTML=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-      <span class="badge ${koT?'bWarn':'bOK'}">${okT}/${S.mics.length} placées</span>
-      <span class="badge bMic">${nZones} zone(s) de coordination</span>
-      <span style="font-size:11px;color:var(--text2)">Les zones indépendantes peuvent réutiliser les mêmes fréquences.</span>
-    </div>`+grid;
-  document.getElementById('grpApplyBtn').style.display='inline-flex';
-  setSt(`Plan par groupe : ${okT}/${S.mics.length} placées sur ${nZones} zone(s)`);
-}
-function applyGroupPlan(){
-  if(!S.grpPlaced)return;
-  let n=0;S.mics.forEach((m,i)=>{if(S.grpPlaced[i]!=null){m.freq=S.grpPlaced[i];n++;}});
-  computeIM();renderAll();setSt(`Plan par groupe appliqué — ${n} fréquence(s)`);
+  computeIM(); renderAll(); renderGroups();
+  const nZones=Object.keys(zmap).length;
+  out.innerHTML=`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <span class="badge ${okT<S.mics.length?'bWarn':'bOK'}">${okT}/${S.mics.length} fréquences placées</span>
+    <span class="badge bMic">${nZones} zone(s) de coordination</span>
+    <span style="font-size:11px;color:var(--text2)">Appliqué. Les zones indépendantes réutilisent le spectre ; les fréquences verrouillées sont conservées.</span>
+  </div>`;
+  setSt(`Plan par zone appliqué — ${okT}/${S.mics.length} sur ${nZones} zone(s).`);
 }
 document.getElementById('grpGenBtn').onclick=generateGroupPlans;
-document.getElementById('grpApplyBtn').onclick=applyGroupPlan;
+['grpSelMic','grpSelIem'].forEach(id=>{ const s=document.getElementById(id); if(s) s.onchange=()=>onGroupSelChange(s); });
+refreshGroupSelectors();
 
 // ── RENDER ────────────────────────────────────────────────────────────
 function renderAll(){
@@ -1277,6 +1334,8 @@ function renderAll(){
   document.getElementById('li5').style.display=S.show5?'flex':'none';
   document.getElementById('liLock').style.display=S.mics.some(m=>m.locked)?'flex':'none';
   syncImBars();
+  const gp=document.getElementById('pane-groups');
+  if(gp&&gp.classList.contains('on')) renderGroups();
 }
 
 // Cellule « Émetteur » d'un canal TV : nom / lieu (distance) · mux
