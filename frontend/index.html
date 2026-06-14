@@ -1684,6 +1684,10 @@ const SPEC_SEGS=[
 ];
 const GAPU=14; // largeur (en « MHz virtuels ») d'une zone compressée
 const SPEC_U=SPEC_SEGS.reduce((t,g)=>t+(g.gap?GAPU:g.b-g.a),0);
+// vrai si f tombe dans une bande non exploitable (700 MHz mobile, 838–863…) :
+// ces portions sont coupées du tracé des scans pour une synchro parfaite des
+// bandes utiles de part et d'autre.
+const inSpecGap=f=>SPEC_SEGS.some(g=>g.gap&&f>g.a&&f<g.b);
 let specU0=0,specU1=SPEC_U; // fenêtre de vue courante
 function uOf(f){
   let u=0;
@@ -1887,13 +1891,24 @@ function drawSpec(){
 
   // scan de spectre importé (courbe mesurée, mise à l'échelle sur ses propres niveaux)
   if(S.scan&&S.scan.points.length){
-    const pts=S.scan.points,sm=S.scan.meta;
-    const top=Math.max(sm.dbMax,-20)+3,bot=Math.min(sm.dbMin,-100)-3,rng=Math.max(1,top-bot);
+    const pts=S.scan.points;
+    // échelle verticale calée sur les seules bandes exploitables : les pics du
+    // 700 MHz (4G/5G) n'écrasent plus le plancher de bruit des bandes utiles.
+    let vMax=-200,vMin=200;
+    for(const p of pts){ if(inSpecGap(p.f))continue; if(p.db>vMax)vMax=p.db; if(p.db<vMin)vMin=p.db; }
+    if(vMax<vMin){ vMax=-20; vMin=-100; }
+    const top=Math.max(vMax,-20)+3,bot=Math.min(vMin,-100)-3,rng=Math.max(1,top-bot);
     const y0=stripH+4,y1=BH-2;
     const yfor=db=>{let t=(db-bot)/rng;t=t<0?0:t>1?1:t;return y1-t*(y1-y0);};
     ctx.strokeStyle=dark?'rgba(94,164,255,.95)':'rgba(24,95,165,.9)';
     ctx.lineWidth=1.6;ctx.beginPath();let started=false;
-    for(const p of pts){const x=fx(p.f);if(x<-5||x>W+5){started=false;continue;}const y=yfor(p.db);if(started)ctx.lineTo(x,y);else{ctx.moveTo(x,y);started=true;}}
+    // on coupe le tracé dans les bandes non exploitables → discontinuité nette,
+    // les deux segments restent parfaitement alignés sur la grille des canaux.
+    for(const p of pts){
+      if(inSpecGap(p.f)){started=false;continue;}
+      const x=fx(p.f);if(x<-5||x>W+5){started=false;continue;}
+      const y=yfor(p.db);if(started)ctx.lineTo(x,y);else{ctx.moveTo(x,y);started=true;}
+    }
     ctx.stroke();
   }
 
