@@ -74,6 +74,7 @@ tr:hover td{background:var(--bg2)}
 .b3TX{background:#ECEAF8;color:#534AB7}
 .bWarn{background:#FAEEDA;color:var(--amber)}.bErr{background:#FCEBEB;color:var(--red)}
 .bLock{background:#FAEEDA;color:var(--amber);gap:3px}
+.bGrp{background:var(--bg2);color:var(--text2);border:0.5px solid var(--border)}
 .lockbtn.on{border-color:var(--amber);color:var(--amber);background:#FAEEDA}
 .r-lock td{background:rgba(133,79,11,.06)}
 .dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0;vertical-align:middle;margin-right:3px}
@@ -184,6 +185,7 @@ tr:hover td{background:var(--bg2)}
   <div class="tab on" data-t="table"><i class="ti ti-table"></i> Tableau</div>
   <div class="tab" data-t="spectrum"><i class="ti ti-wave-sine"></i> Spectre</div>
   <div class="tab" data-t="plan"><i class="ti ti-wand"></i> Plan auto</div>
+  <div class="tab" data-t="groups"><i class="ti ti-layout-grid"></i> Groupes</div>
   <div class="tab" data-t="fplan"><i class="ti ti-edit"></i> Plan fréquences</div>
 </div>
 
@@ -237,6 +239,30 @@ tr:hover td{background:var(--bg2)}
   </div>
 </div>
 
+<!-- GROUPES -->
+<div class="pane" id="pane-groups">
+  <div class="plan-pad">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+      <strong>Groupes & coordination</strong>
+      <span style="font-size:11px;color:var(--text2)">Regroupez vos micros (scènes, zones…) et choisissez lesquels doivent être coordonnés ensemble.</span>
+    </div>
+    <div style="font-size:11px;color:var(--text2);max-width:780px;margin-bottom:12px;line-height:1.5">
+      Deux groupes du même <b>Ensemble</b> sont coordonnés ensemble (pas d'IM entre eux).
+      Les groupes <b>Indépendants</b> (ou d'Ensembles différents) ne se gênent pas : ils peuvent
+      réutiliser les mêmes fréquences — utile pour des lieux éloignés ou des usages non simultanés.
+      Le bouton ci-dessous génère un plan <b>par zone</b> (réutilisation maximale) ; l'onglet
+      <b>Plan auto</b> reste le plan <b>global</b> (tout le monde coordonné, cas le plus sûr).
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn btn-purple" id="grpGenBtn"><i class="ti ti-layout-grid"></i> Générer par groupe / zone</button>
+      <button class="btn btn-xs btn-green" id="grpApplyBtn" style="display:none"><i class="ti ti-check"></i> Appliquer aux micros</button>
+      <span style="font-size:11px;color:var(--text2)">Mode : <span id="grpMode" style="font-weight:600">standard</span> (réglé dans Plan auto)</span>
+    </div>
+    <div class="tbl-sc" id="grpWrap"></div>
+    <div id="grpOut" style="margin-top:14px"></div>
+  </div>
+</div>
+
 <!-- PLAN FREQUENCES (éditable) -->
 <div class="pane" id="pane-fplan">
   <div class="plan-pad">
@@ -268,7 +294,7 @@ tr:hover td{background:var(--bg2)}
 
 <script>
 const MC=['#185FA5','#993556','#3B6D11','#854F0B','#534AB7','#0F6E56','#D85A30','#0C447C'];
-const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null};
+const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groupZones:{},curGroup:'Groupe 1'};
 const BACKEND='http://localhost:3001';
 
 // ── Import de scans de spectre RF (CSV multi-logiciels) ───────────────
@@ -493,6 +519,7 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
   t.classList.add('on');
   document.getElementById('pane-'+t.dataset.t).classList.add('on');
   if(t.dataset.t==='spectrum') drawSpec();
+  if(t.dataset.t==='groups') renderGroups();
 }));
 function showTab(id){
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
@@ -802,7 +829,7 @@ function addUnits(band,sp,count,model,brand,kind,err){
     const freq=autoAssign(fmin,fmax,sp);
     if(!freq){err.textContent=`Plus de fréquence libre dans cette gamme (${added}/${count} placés)`;err.style.display='inline';break;}
     const tntC=S.ch.find(c=>c.occupied&&freq>=c.freq_start&&freq<c.freq_end);
-    S.mics.push({id:Date.now()+i,name:count>1?base+' '+(added+1):base,brand,model,band:band[0]||'',kind,freq,fmin,fmax,bw,spacing:sp,tntConflict:!!tntC,color:MC[S.mics.length%MC.length],imHits:[]});
+    S.mics.push({id:Date.now()+i,name:count>1?base+' '+(added+1):base,brand,model,band:band[0]||'',kind,freq,fmin,fmax,bw,spacing:sp,tntConflict:!!tntC,group:S.curGroup||'Groupe 1',color:MC[S.mics.length%MC.length],imHits:[]});
     computeIM(); added++;
   }
   renderAll();
@@ -858,21 +885,32 @@ function autoAssign(fmin,fmax,sp){
 document.getElementById('clearBtn').onclick=()=>{S.mics=[];S.im=[];S.planSlots=[];renderAll();setSt('Micros effacés');};
 
 // ── IM ────────────────────────────────────────────────────────────────
+// Zone de coordination d'un micro : les groupes d'un même « Ensemble » (cf.
+// onglet Groupes) se coordonnent ensemble ; sinon chaque groupe est sa propre
+// zone (indépendant, fréquences réutilisables). Seuls les micros d'une même
+// zone génèrent des IM entre eux.
+function zoneOf(m){
+  const z=S.groupZones[m.group];
+  return (z&&z!=='indep')?('E:'+z):('G:'+(m.group||'—'));
+}
 function computeIM(){
   S.im=[];
   const F=S.mics.map(m=>m.freq);
+  const Z=S.mics.map(m=>zoneOf(m));
   function push(ord,type,f1,f2,freq,f3){
     const f=parseFloat(freq.toFixed(3));
     if(f>200) S.im.push({ord,type,f1,f2,f3,freq:f});
   }
   for(let i=0;i<F.length;i++){
     for(let j=i+1;j<F.length;j++){
+      if(Z[i]!==Z[j]) continue;          // zones indépendantes : pas d'IM entre elles
       const a=F[i],b=F[j];
       push(3,`2f${L(i)}-f${L(j)}`,a,b,2*a-b);
       push(3,`2f${L(j)}-f${L(i)}`,a,b,2*b-a);
       push(5,`3f${L(i)}-2f${L(j)}`,a,b,3*a-2*b);
       push(5,`3f${L(j)}-2f${L(i)}`,a,b,3*b-2*a);
       for(let k=j+1;k<F.length;k++){
+        if(Z[k]!==Z[i]) continue;
         const c=F[k];
         push(3,`f${L(i)}+f${L(j)}-f${L(k)}`,a,b,a+b-c,c);
         push(3,`f${L(i)}+f${L(k)}-f${L(j)}`,a,b,a+c-b,c);
@@ -918,14 +956,17 @@ const PLAN_BANDS=[[470,694],[822,838],[863,865],[1785,1805],[2400,2483.5]];
 // opts.shuffle : régénération — un tirage aléatoire départage les candidats
 //                quasi équivalents pour proposer un plan différent.
 function generatePlan(opts){
-  const rob=!!(opts&&opts.rob);             // mode robuste : durcit toutes les IM
-  const max=!!(opts&&opts.max);             // mode capacité max : émetteurs espacés (≥2 m)
-  const adv=(!!(opts&&opts.adv)||rob)&&!max, shuffle=!!(opts&&opts.shuffle);
-  S.planAdv=adv;S.planRob=rob;S.planMax=max;
+  opts=opts||{};
+  const mics=opts.mics||S.mics;            // sous-ensemble (coordination par zone) ou tous
+  const render=opts.render!==false;        // false => calcule sans toucher au DOM (zones)
+  const rob=!!opts.rob;                     // mode robuste : durcit toutes les IM
+  const max=!!opts.max;                     // mode capacité max : émetteurs espacés (≥2 m)
+  const adv=(!!opts.adv||rob)&&!max, shuffle=!!opts.shuffle;
+  if(render){S.planAdv=adv;S.planRob=rob;S.planMax=max;}
   const isLk=m=>!!m.locked&&isFinite(m.freq); // porteuse verrouillée par l'utilisateur
   const pr=document.getElementById('planOut');
-  if(!S.ch.length){pr.innerHTML='<span style="color:var(--red)">Lancez d\'abord l\'analyse TNT.</span>';return;}
-  if(!S.mics.length){pr.innerHTML='<span style="color:var(--red)">Ajoutez d\'abord des micros / IEM.</span>';return;}
+  if(!S.ch.length){if(render)pr.innerHTML='<span style="color:var(--red)">Lancez d\'abord l\'analyse TNT.</span>';return{placed:[],freqs:[],nOK:0,nKO:mics.length,adv,rob,max};}
+  if(!mics.length){if(render)pr.innerHTML='<span style="color:var(--red)">Ajoutez d\'abord des micros / IEM.</span>';return{placed:[],freqs:[],nOK:0,nKO:0,adv,rob,max};}
   const occZones=S.ch.filter(c=>c.occupied).map(c=>({s:c.freq_start,e:c.freq_end}));
   const inOcc=f=>occZones.some(z=>f>=z.s&&f<z.e);
   const legal=f=>PLAN_BANDS.some(r=>f>=r[0]&&f<=r[1]);
@@ -939,15 +980,15 @@ function generatePlan(opts){
 
   // micros les plus contraints d'abord (plage étroite, spacing large) ;
   // en régénération, l'ordre des ex æquo est tiré au hasard
-  const rk=S.mics.map(()=>Math.random());
-  const order=S.mics.map((m,i)=>i).filter(i=>!isLk(S.mics[i])).sort((x,y)=>{
-    const wx=S.mics[x].fmax-S.mics[x].fmin, wy=S.mics[y].fmax-S.mics[y].fmin;
-    return (wx!==wy?wx-wy:(S.mics[y].spacing||350)-(S.mics[x].spacing||350))||(shuffle?rk[x]-rk[y]:0);
+  const rk=mics.map(()=>Math.random());
+  const order=mics.map((m,i)=>i).filter(i=>!isLk(mics[i])).sort((x,y)=>{
+    const wx=mics[x].fmax-mics[x].fmin, wy=mics[y].fmax-mics[y].fmin;
+    return (wx!==wy?wx-wy:(mics[y].spacing||350)-(mics[x].spacing||350))||(shuffle?rk[x]-rk[y]:0);
   });
 
   const GUARD3=0.1;   // garde plus étroite pour les IM 3 tons (produits plus rares)
   const GUARD53=0.05; // IM5 à 3 sources : très faibles, fenêtre minimale
-  const placed=new Array(S.mics.length).fill(null);
+  const placed=new Array(mics.length).fill(null);
   const setF=[];            // porteuses posées {freq,sp}
   const imMask=maskNew();   // IM 2 tons du plan (± garde)
   const im3Mask=maskNew();  // IM 3 tons (fA+fB−fC) du plan (± garde étroite)
@@ -975,10 +1016,10 @@ function generatePlan(opts){
 
   // porteuses verrouillées : pré-placées à leur fréquence actuelle. Les autres
   // micros devront les contourner et éviter d'y créer des IM.
-  S.mics.forEach((m,idx)=>{ if(isLk(m)) commit(idx,m.freq,(m.spacing||350)/1000); });
+  mics.forEach((m,idx)=>{ if(isLk(m)) commit(idx,m.freq,(m.spacing||350)/1000); });
 
   for(const idx of order){
-    const m=S.mics[idx], sp=(m.spacing||350)/1000;
+    const m=mics[idx], sp=(m.spacing||350)/1000;
     // Phase 1 : tous les candidats sûrs côté 2 tons, notés pour concentrer
     // les IM dans les canaux TV occupés (sinon dans les canaux sacrifiés).
     const cands=[];
@@ -1055,10 +1096,8 @@ function generatePlan(opts){
     }
     if(best!=null) commit(idx,best,sp);
   }
-  S.planSlots=S.mics.map((m,i)=>({freq:placed[i],name:m.name,off:placed[i]!=null&&!S.ch.some(c=>placed[i]>=c.freq_start&&placed[i]<c.freq_end)}));
-
   const freqs=placed.filter(f=>f!=null);
-  const nOK=freqs.length, nKO=S.mics.length-nOK;
+  const nOK=freqs.length, nKO=mics.length-nOK;
   // bilan des IM 2 tons du plan retenu
   const planIM=[];
   for(let i=0;i<freqs.length;i++) for(let j=i+1;j<freqs.length;j++)
@@ -1082,11 +1121,15 @@ function generatePlan(opts){
       for(const im of tri5(freqs[i],freqs[j],freqs[k])) if(maskHit(car5,im)) res5++;
   }
 
-  const koNames=S.mics.filter((m,i)=>placed[i]==null).map(m=>m.name);
+  const stats={placed,freqs,nOK,nKO,planIM,imTV,imFree,sacr,res3,res5,adv,rob,max};
+  if(!render) return stats;
+
+  S.planSlots=S.mics.map((m,i)=>({freq:placed[i],name:m.name,off:placed[i]!=null&&!S.ch.some(c=>placed[i]>=c.freq_start&&placed[i]<c.freq_end)}));
+  const koNames=mics.filter((m,i)=>placed[i]==null).map(m=>m.name);
   let h=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
     <span class="badge bMic">${max?'Capacité max · émetteurs ≥ 2 m (IM faibles tolérées)':(rob?'Mode robuste · IM3 + IM5 + 3TX (zéro sur porteuse)':(adv?'Mode avancé · 3 sources + IM5':'Mode standard'))}</span>
-    <span class="badge ${nKO?'bWarn':'bOK'}">${nOK}/${S.mics.length} fréquences placées</span>
-    ${S.mics.filter(isLk).length?`<span class="badge bLock" title="Porteuses conservées telles quelles lors de la régénération"><i class="ti ti-lock"></i> ${S.mics.filter(isLk).length} verrouillée(s)</span>`:''}
+    <span class="badge ${nKO?'bWarn':'bOK'}">${nOK}/${mics.length} fréquences placées</span>
+    ${mics.filter(isLk).length?`<span class="badge bLock" title="Porteuses conservées telles quelles lors de la régénération"><i class="ti ti-lock"></i> ${mics.filter(isLk).length} verrouillée(s)</span>`:''}
     <span class="badge bTV">${imTV} IM en zone TV</span>
     ${imFree>0?`<span class="badge bWarn">${imFree} IM en zone libre${sacr.length?' (canaux sacrifiés : C'+sacr.join(', C')+')':''}</span>`:'<span class="badge bOK">0 IM en zone libre ✓</span>'}
     ${res3>0?`<span class="badge bWarn" title="Produits fA+fB−fC (3 émetteurs simultanés), plus faibles que les IM 2 tons">${res3} IM 3 tons sur porteuse</span>`:'<span class="badge bOK">0 IM sur les porteuses ✓</span>'}
@@ -1114,12 +1157,13 @@ function generatePlan(opts){
     </div>`;
   });
   h+='</div>';
-  const offGrid=S.mics.map((m,i)=>({m,f:placed[i]})).filter(x=>x.f!=null&&!S.ch.some(c=>x.f>=c.freq_start&&x.f<c.freq_end));
+  const offGrid=mics.map((m,i)=>({m,f:placed[i]})).filter(x=>x.f!=null&&!S.ch.some(c=>x.f>=c.freq_start&&x.f<c.freq_end));
   if(offGrid.length) h+=`<div style="margin-top:10px;font-size:11px;color:var(--text2)">Hors bande TNT : ${offGrid.map(x=>`${x.m.name} <b>${x.f.toFixed(3)}</b>`).join(' · ')}</div>`;
   pr.innerHTML=h;
   drawPlanSpectrum();
   document.getElementById('applyBtn').style.display='inline-flex';
   document.getElementById('regenBtn').style.display='inline-flex';
+  return stats;
 }
 
 function applyPlan(){
@@ -1127,6 +1171,101 @@ function applyPlan(){
   S.planSlots.forEach((sl,i)=>{if(S.mics[i]&&sl&&sl.freq!=null){S.mics[i].freq=sl.freq;n++;}});
   computeIM(); renderAll(); setSt(`Plan appliqué — ${n} fréquence(s)`);
 }
+
+// ── GROUPES & COORDINATION PAR ZONE ───────────────────────────────────
+function groupList(){
+  const set=[],seen=new Set();
+  S.mics.forEach(m=>{const g=m.group||'Groupe 1';if(!seen.has(g)){seen.add(g);set.push(g);}});
+  if(S.curGroup&&!seen.has(S.curGroup)) set.push(S.curGroup);
+  return set;
+}
+function renderGroups(){
+  const w=document.getElementById('grpWrap');if(!w)return;
+  const mode=document.getElementById('grpMode');
+  if(mode) mode.textContent=S.planMax?'capacité max':(S.planRob?'robuste':(S.planAdv?'avancé':'standard'));
+  const groups=groupList(),opts=['indep','A','B','C','D','E','F'];
+  let h=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <span style="font-size:11px;color:var(--text2)">Nouveaux micros → groupe :</span>
+    <input id="curGroup" list="grpNames" value="${(S.curGroup||'').replace(/"/g,'&quot;')}" style="width:160px">
+    <datalist id="grpNames">${groups.map(g=>`<option value="${g.replace(/"/g,'&quot;')}">`).join('')}</datalist>
+  </div>`;
+  if(!groups.length){w.innerHTML=h+'<div class="empty"><i class="ti ti-layout-grid"></i>Aucun groupe : ajoutez des micros.</div>';wireGroups();return;}
+  h+=`<table><thead><tr><th>Groupe</th><th>Micros</th><th>Coordination</th></tr></thead><tbody>`;
+  groups.forEach(g=>{
+    const n=S.mics.filter(m=>(m.group||'Groupe 1')===g).length;
+    const z=S.groupZones[g]||'indep';
+    const ge=g.replace(/"/g,'&quot;');
+    h+=`<tr>
+      <td><input type="text" value="${ge}" data-grp-ren="${ge}" style="width:160px"></td>
+      <td style="color:var(--text2)">${n}</td>
+      <td><select data-grp-zone="${ge}">${opts.map(o=>`<option value="${o}"${o===z?' selected':''}>${o==='indep'?'Indépendant':'Ensemble '+o}</option>`).join('')}</select></td>
+    </tr>`;
+  });
+  h+='</tbody></table>';
+  w.innerHTML=h;wireGroups();
+}
+function wireGroups(){
+  const cg=document.getElementById('curGroup');
+  if(cg) cg.onchange=()=>{S.curGroup=cg.value.trim()||'Groupe 1';};
+  document.querySelectorAll('[data-grp-zone]').forEach(sel=>{
+    sel.onchange=()=>{S.groupZones[sel.dataset.grpZone]=sel.value;computeIM();renderAll();};
+  });
+  document.querySelectorAll('[data-grp-ren]').forEach(inp=>{
+    inp.onchange=()=>{
+      const old=inp.dataset.grpRen,nw=inp.value.trim();
+      if(!nw||nw===old){inp.value=old;return;}
+      S.mics.forEach(m=>{if((m.group||'Groupe 1')===old)m.group=nw;});
+      if(S.groupZones[old]!=null){S.groupZones[nw]=S.groupZones[old];delete S.groupZones[old];}
+      if(S.curGroup===old)S.curGroup=nw;
+      computeIM();renderAll();renderGroups();
+    };
+  });
+}
+function generateGroupPlans(){
+  const out=document.getElementById('grpOut');
+  if(!S.ch.length){out.innerHTML='<span style="color:var(--red)">Lancez d\'abord l\'analyse TNT (onglet Tableau).</span>';return;}
+  if(!S.mics.length){out.innerHTML='<span style="color:var(--red)">Ajoutez d\'abord des micros.</span>';return;}
+  const mode={adv:!!S.planAdv,rob:!!S.planRob,max:!!S.planMax};
+  const zmap={};
+  S.mics.forEach((m,i)=>{const z=zoneOf(m);(zmap[z]=zmap[z]||[]).push(i);});
+  const placedAll=new Array(S.mics.length).fill(null);
+  Object.keys(zmap).forEach(z=>{
+    const idxs=zmap[z],sub=idxs.map(i=>S.mics[i]);
+    const r=generatePlan({mics:sub,render:false,adv:mode.adv,rob:mode.rob,max:mode.max});
+    idxs.forEach((gi,k)=>placedAll[gi]=r.placed[k]);
+  });
+  S.grpPlaced=placedAll;
+  S.planSlots=S.mics.map((m,i)=>({freq:placedAll[i],name:m.name,off:placedAll[i]!=null&&!S.ch.some(c=>placedAll[i]>=c.freq_start&&placedAll[i]<c.freq_end)}));
+  const groups=groupList();
+  let okT=0,koT=0,grid='<div class="plan-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">';
+  groups.forEach(g=>{
+    const gi=S.mics.map((m,i)=>i).filter(i=>(S.mics[i].group||'Groupe 1')===g);
+    const z=S.groupZones[g]||'indep',zlabel=z==='indep'?'Indépendant':'Ensemble '+z;
+    let rows='';
+    gi.forEach(i=>{const f=placedAll[i],m=S.mics[i];if(f!=null)okT++;else koT++;
+      rows+=`<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:1px 0">
+        <span><span class="dot" style="background:${m.color}"></span>${m.name}</span>
+        <b style="font-family:monospace;color:${f!=null?m.color:'var(--red)'}">${f!=null?f.toFixed(3):'—'}</b></div>`;
+    });
+    grid+=`<div class="plan-slot mic"><div style="font-weight:600;margin-bottom:4px">${g} <span class="badge bMic" style="font-size:9px">${zlabel}</span></div>${rows}</div>`;
+  });
+  grid+='</div>';
+  const nZones=new Set(S.mics.map(zoneOf)).size;
+  out.innerHTML=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <span class="badge ${koT?'bWarn':'bOK'}">${okT}/${S.mics.length} placées</span>
+      <span class="badge bMic">${nZones} zone(s) de coordination</span>
+      <span style="font-size:11px;color:var(--text2)">Les zones indépendantes peuvent réutiliser les mêmes fréquences.</span>
+    </div>`+grid;
+  document.getElementById('grpApplyBtn').style.display='inline-flex';
+  setSt(`Plan par groupe : ${okT}/${S.mics.length} placées sur ${nZones} zone(s)`);
+}
+function applyGroupPlan(){
+  if(!S.grpPlaced)return;
+  let n=0;S.mics.forEach((m,i)=>{if(S.grpPlaced[i]!=null){m.freq=S.grpPlaced[i];n++;}});
+  computeIM();renderAll();setSt(`Plan par groupe appliqué — ${n} fréquence(s)`);
+}
+document.getElementById('grpGenBtn').onclick=generateGroupPlans;
+document.getElementById('grpApplyBtn').onclick=applyGroupPlan;
 
 // ── RENDER ────────────────────────────────────────────────────────────
 function renderAll(){
@@ -1201,7 +1340,7 @@ function renderTable(){
       const sb=micStatusBadge(m);
       h+=`<tr class="r-mic">
         <td><span class="dot" style="background:${m.color}"></span><span class="badge bMic">${m.kind==="iem"?"IEM":"Micro"}</span></td>
-        <td style="font-weight:600">${m.name}</td>
+        <td style="font-weight:600">${m.name}${m.group?` <span class="badge bGrp" style="font-size:9px;font-weight:500">${m.group}</span>`:''}</td>
         <td></td>
         <td style="font-family:monospace;font-weight:600;color:${m.color}">${m.freq} MHz</td>
         <td style="color:var(--text2);font-size:11px">${m.brand?m.brand+' ':''}${m.model||''}${m.band?' '+m.band:''}<br><span style="opacity:.7">${m.fmin}–${m.fmax} MHz · espacement ${m.spacing||m.bw} kHz</span></td>
@@ -1572,14 +1711,17 @@ function renderFreqPlan(){
     w.innerHTML='<div class="empty"><i class="ti ti-edit"></i>Ajoutez des micros / IEM (ou une ligne libre) pour construire le plan.</div>';
     return;
   }
-  let h=`<table><thead><tr>
-    <th>#</th><th>Nom</th><th>Matériel</th><th>Fréquence (MHz)</th><th>Plage</th><th>Statut</th><th style="width:70px">Verrou</th><th style="width:28px"></th>
+  const grpNames=groupList();
+  let h=`<datalist id="fpGrpNames">${grpNames.map(g=>`<option value="${g.replace(/"/g,'&quot;')}">`).join('')}</datalist>
+  <table><thead><tr>
+    <th>#</th><th>Nom</th><th>Groupe</th><th>Matériel</th><th>Fréquence (MHz)</th><th>Plage</th><th>Statut</th><th style="width:70px">Verrou</th><th style="width:28px"></th>
   </tr></thead><tbody>`;
   S.mics.forEach((m,i)=>{
     const st=micStatusBadge(m);
     h+=`<tr class="${m.locked?'r-lock':''}">
       <td><span class="dot" style="background:${m.color}"></span>${i+1}</td>
-      <td><input type="text" value="${(m.name||'').replace(/"/g,'&quot;')}" data-fp="name" data-i="${i}" style="width:150px"></td>
+      <td><input type="text" value="${(m.name||'').replace(/"/g,'&quot;')}" data-fp="name" data-i="${i}" style="width:140px"></td>
+      <td><input type="text" value="${(m.group||'').replace(/"/g,'&quot;')}" list="fpGrpNames" data-fp="group" data-i="${i}" style="width:110px" title="Groupe (scène, zone…) — gérez la coordination dans l'onglet Groupes"></td>
       <td style="font-size:11px;color:var(--text2)">${m.brand?m.brand+' ':''}${m.model||'—'}${m.band?' '+m.band:''}</td>
       <td><input type="number" value="${m.freq}" step="0.025" data-fp="freq" data-i="${i}" style="width:100px;font-family:monospace"></td>
       <td style="font-size:11px;color:var(--text2)">${m.fmin}–${m.fmax}</td>
@@ -1595,6 +1737,7 @@ function renderFreqPlan(){
       const i=parseInt(inp.dataset.i),m=S.mics[i];
       if(!m)return;
       if(inp.dataset.fp==='name'){ m.name=inp.value.trim()||m.name; }
+      else if(inp.dataset.fp==='group'){ m.group=inp.value.trim()||'Groupe 1'; }
       else{
         const f=parseFloat(inp.value);
         if(isNaN(f))return;
@@ -1610,7 +1753,7 @@ function renderFreqPlan(){
 document.getElementById('fpAdd').onclick=()=>{
   const freq=autoAssign(470,694,350)||470.3;
   S.mics.push({id:Date.now(),name:'Ligne '+(S.mics.length+1),brand:'',model:'Libre',band:'',kind:'mic',
-    freq,fmin:470,fmax:694,bw:200,spacing:350,
+    freq,fmin:470,fmax:694,bw:200,spacing:350,group:S.curGroup||'Groupe 1',
     tntConflict:S.ch.some(c=>c.occupied&&freq>=c.freq_start&&freq<c.freq_end),
     color:MC[S.mics.length%MC.length],imHits:[]});
   computeIM(); renderAll();
