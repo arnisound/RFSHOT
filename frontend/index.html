@@ -226,6 +226,7 @@ tr:hover td{background:var(--bg2)}
       <button class="btn btn-xs" id="impBtn" title="Importer un scan de spectre (CSV) exporté depuis Shure Wireless Workbench, Sennheiser WSM, RF Explorer, tinySA, etc."><i class="ti ti-file-upload"></i> Importer un scan</button>
       <input type="file" id="impFile" accept=".csv,.txt,text/csv,text/plain" hidden>
       <span id="scanInfo" style="font-size:11px;color:var(--text2)">Aucun scan importé — formats CSV : Shure WWB, Sennheiser WSM, RF Explorer, tinySA…</span>
+      <button class="btn btn-xs btn-purple" id="scanFit" style="display:none" title="Recalcule le plan de fréquences en évitant les pics et le bruit mesurés par le scan (les porteuses verrouillées ne bougent pas)."><i class="ti ti-adjustments-check"></i> Caler le plan sur le scan</button>
       <button class="btn btn-xs" id="scanClear" style="display:none;border-color:var(--red);color:var(--red)"><i class="ti ti-x"></i> Retirer</button>
     </div>
     <div id="imBarSpec" class="im-bar" style="margin-bottom:8px"></div>
@@ -354,7 +355,7 @@ tr:hover td{background:var(--bg2)}
 
 <script>
 const MC=['#185FA5','#993556','#3B6D11','#854F0B','#534AB7','#0F6E56','#D85A30','#0C447C'];
-const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{},mode:'std',exclZones:[],spareN:0};
+const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{},mode:'std',exclZones:[],spareN:0,useScanBlock:false,scanMargin:8};
 const BACKEND='http://localhost:3001';
 
 // Réglages de coordination (onglet Plan auto) : la distance entre émetteurs
@@ -373,6 +374,28 @@ function globalReserved(){ return (S.reservedGlobal||[]).filter(f=>isFinite(f)).
 // Zones d'exclusion manuelles (MHz) : plages à éviter partout, en plus du scan TNT
 // (radios locales, intercom, autres prods…). Traitées comme des canaux occupés.
 function exclSpans(){ return (S.exclZones||[]).filter(z=>isFinite(z.lo)&&isFinite(z.hi)&&z.hi>z.lo).map(z=>({s:z.lo,e:z.hi})); }
+// Seuil dBm au-dessus duquel le scan est considéré « occupé » (pic ou bruit
+// élevé) : plancher de bruit robuste (percentile bas des bandes utiles) + marge.
+function scanThreshold(){
+  const sc=S.scan; if(!sc||!sc.points.length) return null;
+  const vals=sc.points.filter(p=>!inSpecGap(p.f)&&PLAN_BANDS.some(r=>p.f>=r[0]&&p.f<=r[1])).map(p=>p.db).sort((a,b)=>a-b);
+  if(!vals.length) return null;
+  const floor=vals[Math.floor(0.25*vals.length)];           // ~plancher de bruit
+  return floor+(S.scanMargin||8);
+}
+// Plages de fréquences à éviter d'après le scan (au-dessus du seuil), fusionnées
+// et élargies d'une garde. Actives seulement si l'utilisateur a calé le plan.
+function scanSpans(){
+  if(!S.useScanBlock||!S.scan||!S.scan.points.length) return [];
+  const thr=scanThreshold(); if(thr==null) return [];
+  const pts=S.scan.points,GUARD=0.05,BRIDGE=0.15,spans=[]; let cur=null;
+  for(const p of pts){
+    if(inSpecGap(p.f)){ cur=null; continue; }
+    if(p.db>thr){ if(cur&&p.f-cur.e<=BRIDGE) cur.e=p.f; else { cur={s:p.f,e:p.f}; spans.push(cur); } }
+    else cur=null;
+  }
+  return spans.map(z=>({s:z.s-GUARD,e:z.e+GUARD}));
+}
 
 // ── Import de scans de spectre RF (CSV multi-logiciels) ───────────────
 // Cf. lib/rfshot-scan.js. Parse les exports de Shure Wireless Workbench,
@@ -679,24 +702,44 @@ document.getElementById('scanBtn').onclick=async()=>{
 
 // ── IMPORT SCAN DE SPECTRE ───────────────────────────────────────────
 function renderScanInfo(){
-  const info=document.getElementById('scanInfo'),clr=document.getElementById('scanClear');
+  const info=document.getElementById('scanInfo'),clr=document.getElementById('scanClear'),fit=document.getElementById('scanFit');
   if(!info)return;
   if(!S.scan){
     info.style.color='var(--text2)';
     info.textContent='Aucun scan importé — formats CSV : Shure WWB, Sennheiser WSM, RF Explorer, tinySA…';
-    if(clr)clr.style.display='none';
+    if(clr)clr.style.display='none'; if(fit)fit.style.display='none';
     return;
   }
-  const m=S.scan.meta,unitTxt=m.delimiter==='\t'?'tab':m.delimiter;
+  const m=S.scan.meta,unitTxt=m.delimiter==='\t'?'tab':m.delimiter,thr=scanThreshold();
   info.style.color='var(--text)';
   info.innerHTML=`<strong>${S.scan.name}</strong> — ${m.count} pts · ${m.fmin.toFixed(1)}–${m.fmax.toFixed(1)} MHz · `
     +`plancher ${m.dbMin.toFixed(0)} / crête ${m.dbMax.toFixed(0)} dBm `
-    +`<span style="color:var(--text3)">(délim. « ${unitTxt} », ${m.unit})</span>`
+    +(S.useScanBlock&&thr!=null?`<span style="color:var(--purple)">· plan calé (seuil ${thr.toFixed(0)} dBm)</span> `:'')
     +(S.scan.warnings&&S.scan.warnings.length?` <span style="color:var(--red)">⚠ ${S.scan.warnings.join(' ')}</span>`:'');
-  if(clr)clr.style.display='';
+  if(clr)clr.style.display=''; if(fit)fit.style.display='';
+}
+// Recalcule le plan en évitant les pics/bruit mesurés (les verrous restent).
+function fitPlanToScan(){
+  if(!S.scan||!S.scan.points.length){ setSt('Importez d\'abord un scan.'); return; }
+  if(!S.ch.length){ setSt('Lancez d\'abord l\'analyse TNT (onglet Tableau).'); return; }
+  if(!S.mics.length){ setSt('Ajoutez d\'abord des micros.'); return; }
+  S.useScanBlock=true;
+  const thr=scanThreshold();
+  const before=S.mics.map(m=>m.freq);
+  const onPeak=m=>{const d=scanDbAt(m.freq);return d!=null&&thr!=null&&d>thr;};
+  const lockedOnPeak=S.mics.filter(m=>m.locked&&isFinite(m.freq)&&onPeak(m)).length;
+  // respecte les zones indépendantes en mode Avancé, sinon plan global coordonné
+  const multiZone=S.mode==='adv'&&new Set(S.mics.map(m=>micCoord(m)==='global'?'G':zoneKeyOfMic(m))).size>1;
+  if(multiZone){ generateGroupPlans(); }
+  else { const r=generatePlan({mics:S.mics,render:false}); S.mics.forEach((m,i)=>{ if(r.placed[i]!=null) m.freq=r.placed[i]; }); computeIM(); renderAll(); }
+  const moved=S.mics.filter((m,i)=>m.freq!==before[i]).length;
+  renderScanInfo(); drawSpec();
+  setSt(`Plan calé sur le scan — ${moved} fréquence(s) déplacée(s), pics et bruit évités (seuil ${thr!=null?thr.toFixed(0):'?'} dBm).`
+    +(lockedOnPeak?` ⚠ ${lockedOnPeak} verrou(s) sur un pic — non déplacé(s).`:''));
 }
 document.getElementById('impBtn').onclick=()=>document.getElementById('impFile').click();
-document.getElementById('scanClear').onclick=()=>{S.scan=null;renderScanInfo();drawSpec();setSt('Scan retiré.');};
+document.getElementById('scanClear').onclick=()=>{S.scan=null;S.useScanBlock=false;renderScanInfo();drawSpec();setSt('Scan retiré.');};
+document.getElementById('scanFit').onclick=fitPlanToScan;
 document.getElementById('impFile').onchange=(ev)=>{
   const file=ev.target.files&&ev.target.files[0];
   if(!file)return;
@@ -944,7 +987,7 @@ function autoAssign(fmin,fmax,sp,group){
   group=group||S.curGroup||'Groupe 1';
   const newM={group};                 // micro virtuel pour tester la coexistence
   const minGap=(sp||350)/1000; // espacement demandé (MHz)
-  const occ=S.ch.filter(c=>c.occupied).map(c=>({s:c.freq_start,e:c.freq_end})).concat(exclSpans());
+  const occ=S.ch.filter(c=>c.occupied).map(c=>({s:c.freq_start,e:c.freq_end})).concat(exclSpans()).concat(scanSpans());
   // n'évite QUE les micros qui coexistent (même zone, ou Global) : un groupe
   // indépendant peut réutiliser les fréquences des autres groupes.
   const g=imGuardMHz();
@@ -1106,7 +1149,7 @@ function generatePlan(opts){
   const pr=document.getElementById('planOut');
   if(!S.ch.length){if(render)pr.innerHTML='<span style="color:var(--red)">Lancez d\'abord l\'analyse TNT.</span>';return{placed:[],freqs:[],nOK:0,nKO:mics.length,adv,rob,max};}
   if(!mics.length){if(render)pr.innerHTML='<span style="color:var(--red)">Ajoutez d\'abord des micros / IEM.</span>';return{placed:[],freqs:[],nOK:0,nKO:0,adv,rob,max};}
-  const occZones=S.ch.filter(c=>c.occupied).map(c=>({s:c.freq_start,e:c.freq_end})).concat(exclSpans());
+  const occZones=S.ch.filter(c=>c.occupied).map(c=>({s:c.freq_start,e:c.freq_end})).concat(exclSpans()).concat(scanSpans());
   const inOcc=f=>occZones.some(z=>f>=z.s&&f<z.e);
   const legal=f=>PLAN_BANDS.some(r=>f>=r[0]&&f<=r[1]);
   const nearOcc=f=>occZones.some(z=>f>z.s-0.3&&f<z.e+0.3);
@@ -1940,6 +1983,19 @@ function drawSpec(){
     if(AX){ ctx.save();ctx.translate(9,(y0+y1)/2);ctx.rotate(-Math.PI/2);
       ctx.textAlign='center';ctx.fillStyle=dark?'rgba(255,255,255,.5)':'rgba(0,0,0,.5)';
       ctx.font='9px sans-serif';ctx.fillText('dBm',0,0);ctx.restore(); }
+    // plan calé sur le scan : ligne de seuil + plages évitées (barre rouge en haut)
+    if(S.useScanBlock){
+      const thr=scanThreshold();
+      if(thr!=null){ const ty=yfor(thr);
+        ctx.strokeStyle=dark?'rgba(255,120,120,.8)':'rgba(163,45,45,.7)';ctx.lineWidth=1;ctx.setLineDash([5,3]);
+        ctx.beginPath();ctx.moveTo(AX,ty);ctx.lineTo(W,ty);ctx.stroke();ctx.setLineDash([]);
+        ctx.fillStyle=dark?'rgba(255,120,120,.9)':'rgba(163,45,45,.8)';ctx.textAlign='left';ctx.font='9px sans-serif';
+        ctx.fillText('seuil '+thr.toFixed(0)+' dBm',AX+3,ty-2);
+      }
+      scanSpans().forEach(z=>{ const x1=Math.max(fx(z.s),AX),x2=Math.min(fx(z.e),W); if(x2<=x1)return;
+        ctx.fillStyle='rgba(163,45,45,.55)';ctx.fillRect(x1,0,x2-x1,4);
+      });
+    }
     ctx.strokeStyle=dark?'rgba(94,164,255,.95)':'rgba(24,95,165,.9)';
     ctx.lineWidth=1.6;ctx.beginPath();let started=false;
     // on coupe le tracé dans les bandes non exploitables → discontinuité nette,
