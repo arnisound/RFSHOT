@@ -1688,6 +1688,29 @@ const SPEC_U=SPEC_SEGS.reduce((t,g)=>t+(g.gap?GAPU:g.b-g.a),0);
 // ces portions sont coupées du tracé des scans pour une synchro parfaite des
 // bandes utiles de part et d'autre.
 const inSpecGap=f=>SPEC_SEGS.some(g=>g.gap&&f>g.a&&f<g.b);
+// inverse de uOf : position virtuelle u -> fréquence réelle (+ info bande coupée)
+function fOfU(u){
+  u=Math.max(0,Math.min(SPEC_U,u));
+  let acc=0;
+  for(const g of SPEC_SEGS){
+    const len=g.gap?GAPU:(g.b-g.a);
+    if(u<=acc+len){ return {f:g.a+(u-acc)/len*(g.b-g.a),gap:!!g.gap,label:g.label}; }
+    acc+=len;
+  }
+  return {f:SPEC_SEGS[SPEC_SEGS.length-1].b,gap:false};
+}
+// dBm mesuré à une fréquence (point de scan le plus proche), ou null
+function scanDbAt(f){
+  const sc=S.scan; if(!sc||!sc.points.length) return null;
+  const m=sc.meta,st=m&&m.step,f0=m&&m.fmin;
+  if(st&&isFinite(f0)){ const i=Math.round((f-f0)/st); const p=sc.points[i]; if(p&&Math.abs(p.f-f)<=st) return p.db; }
+  // repli : recherche dichotomique
+  const pts=sc.points; let lo=0,hi=pts.length-1;
+  if(f<=pts[0].f) return pts[0].db; if(f>=pts[hi].f) return pts[hi].db;
+  while(hi-lo>1){const mid=(lo+hi)>>1; if(pts[mid].f<f)lo=mid;else hi=mid;}
+  return Math.abs(pts[lo].f-f)<=Math.abs(pts[hi].f-f)?pts[lo].db:pts[hi].db;
+}
+let specCurX=null; // position X du curseur de lecture (px CSS), null si hors zone
 // largeur du couloir d'échelle dBm à gauche : présent seulement quand un scan
 // est chargé (sinon 0 → tracé plein cadre, comportement inchangé).
 const axGutter=()=>(S.scan&&S.scan.points&&S.scan.points.length)?40:0;
@@ -1950,6 +1973,32 @@ function drawSpec(){
     ctx.beginPath();ctx.moveTo(x,BH+18);ctx.lineTo(x,BH+24);ctx.stroke();
     drawLock(ctx,x,BH+24,col);
   });
+  // ── Curseur de lecture : ligne verticale + fréquence (et dBm si scan) ──
+  if(specCurX!=null&&specCurX>=AX&&specCurX<=W){
+    const u=specU0+(specCurX-AX)/PW*span, info=fOfU(u);
+    const ch=S.ch.find(c=>info.f>=c.freq_start&&info.f<c.freq_end);
+    // surligne le canal survolé pour mieux situer la lecture
+    if(ch){ const cx1=Math.max(fx(ch.freq_start),AX),cx2=Math.min(fx(ch.freq_end),W);
+      ctx.strokeStyle=ch.occupied?'#A32D2D':'#3B6D11';ctx.lineWidth=1.5;
+      ctx.strokeRect(cx1+.5,.5,cx2-cx1-1,BH-1);
+    }
+    // trait curseur
+    ctx.strokeStyle=dark?'rgba(255,255,255,.65)':'rgba(0,0,0,.6)';ctx.lineWidth=1;ctx.setLineDash([4,3]);
+    ctx.beginPath();ctx.moveTo(specCurX,0);ctx.lineTo(specCurX,BH);ctx.stroke();ctx.setLineDash([]);
+    // étiquette de lecture
+    let txt=info.f.toFixed(3)+' MHz';
+    const db=info.gap?null:scanDbAt(info.f); if(db!=null) txt+=' · '+db.toFixed(1)+' dBm';
+    if(ch) txt+=' · C'+ch.ch+(ch.occupied?' occupé':' libre');
+    else if(info.gap) txt+=' · '+(info.label||'réservé');
+    ctx.font='600 11px sans-serif';ctx.textAlign='left';
+    const tw=ctx.measureText(txt).width,bw=tw+12,bh=17;
+    let bx=specCurX+8; if(bx+bw>W) bx=specCurX-8-bw; if(bx<AX) bx=AX;
+    ctx.fillStyle=dark?'rgba(18,18,22,.94)':'rgba(255,255,255,.96)';
+    ctx.strokeStyle=dark?'rgba(255,255,255,.3)':'rgba(0,0,0,.25)';ctx.lineWidth=1;
+    ctx.fillRect(bx,2,bw,bh);ctx.strokeRect(bx+.5,2.5,bw-1,bh-1);
+    ctx.fillStyle=dark?'#fff':'#111';ctx.fillText(txt,bx+6,14);
+  }
+
   // aide navigation (adaptée au support : souris ou tactile)
   ctx.textAlign='right';
   ctx.font='10px sans-serif';
@@ -1976,11 +2025,16 @@ function drawSpec(){
     specU0=n0;specU1=n0+ns;
     drawSpec();
   },{passive:false});
-  let drag=null;
+  let drag=null,curRAF=0;
+  const curRedraw=()=>{ if(!curRAF) curRAF=requestAnimationFrame(()=>{curRAF=0;drawSpec();}); };
+  // curseur de lecture : suit la souris (throttlé par requestAnimationFrame)
+  cv.addEventListener('mousemove',e=>{ const r=cv.getBoundingClientRect(); specCurX=e.clientX-r.left; if(!drag) curRedraw(); });
+  cv.addEventListener('mouseleave',()=>{ specCurX=null; curRedraw(); });
   cv.addEventListener('mousedown',e=>{drag={x:e.clientX,u0:specU0,u1:specU1};cv.style.cursor='grabbing';});
   window.addEventListener('mousemove',e=>{
     if(!drag)return;
     const r=cv.getBoundingClientRect(),sp=drag.u1-drag.u0,PW=r.width-axGutter();
+    specCurX=e.clientX-r.left;
     let du=-(e.clientX-drag.x)/PW*sp;
     du=Math.max(-drag.u0,Math.min(du,SPEC_U-drag.u1));
     specU0=drag.u0+du;specU1=drag.u1+du;
