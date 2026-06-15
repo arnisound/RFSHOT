@@ -51,6 +51,8 @@ select{padding:5px 8px;border:0.5px solid var(--border2);border-radius:var(--rad
 .modesw button.on{background:var(--purple);color:#fff}
 /* Éléments réservés au mode Avancé : masqués en mode Standard */
 body.mode-std .adv-only{display:none !important}
+/* Ligne surlignée dans la liste du Spectre avancé (survol/sélection porteuse) */
+#advMicList tr.row-hi td{background:rgba(24,95,165,.18)}
 label.chk{font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;cursor:pointer}
 .add-bar{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius);padding:7px 10px;gap:8px}
 
@@ -199,6 +201,10 @@ tr:hover td{background:var(--bg2)}
   <!-- Ligne 4 : génération du plan -->
   <div class="trow">
     <button class="btn btn-purple" id="autoBtn" style="padding:9px 22px;font-size:13px"><i class="ti ti-wand"></i> Plan de fréquences automatique</button>
+    <span id="planDirtyBar" style="display:none;align-items:center;gap:8px">
+      <span style="color:var(--amber);font-size:12px"><i class="ti ti-alert-triangle"></i> Matériel ajouté — le plan n'est pas recoordonné.</span>
+      <button class="btn btn-xs btn-purple" id="planDirtyBtn"><i class="ti ti-wand"></i> Recalculer le plan</button>
+    </span>
   </div>
 </div>
 
@@ -380,7 +386,7 @@ tr:hover td{background:var(--bg2)}
 
 <script>
 const MC=['#185FA5','#993556','#3B6D11','#854F0B','#534AB7','#0F6E56','#D85A30','#0C447C'];
-const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{},mode:'std',exclZones:[],spareN:0,useScanBlock:false,scanMargin:8};
+const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{},mode:'std',exclZones:[],spareN:0,useScanBlock:false,scanMargin:8,planDirty:false};
 const BACKEND='http://localhost:3001';
 
 // Réglages de coordination (onglet Plan auto) : la distance entre émetteurs
@@ -749,7 +755,7 @@ function fitPlanToScan(){
   if(!S.scan||!S.scan.points.length){ setSt('Importez d\'abord un scan.'); return; }
   if(!S.ch.length){ setSt('Lancez d\'abord l\'analyse TNT (onglet Tableau).'); return; }
   if(!S.mics.length){ setSt('Ajoutez d\'abord des micros.'); return; }
-  S.useScanBlock=true;
+  S.useScanBlock=true; clearPlanDirty();
   const thr=scanThreshold();
   const before=S.mics.map(m=>m.freq);
   const onPeak=m=>{const d=scanDbAt(m.freq);return d!=null&&thr!=null&&d>thr;};
@@ -774,7 +780,7 @@ function renderAdvList(){
   let h=`<table><thead><tr><th>#</th><th>Liaison</th><th>Type</th><th>Plage</th><th>Fréquence (MHz)</th><th>Statut</th><th>Placer</th><th style="width:60px">Verrou</th></tr></thead><tbody>`;
   S.mics.forEach((m,i)=>{
     const armed=placeArmed===m.id;
-    h+=`<tr class="${m.locked?'r-lock':''}">
+    h+=`<tr data-row="${m.id}" class="${m.locked?'r-lock':''}${armed?' row-hi':''}">
       <td><span class="dot" style="background:${grpColor(m.group)||m.color}"></span>${i+1}</td>
       <td>${m.name}</td>
       <td style="font-size:11px;color:var(--text2)">${m.kind==='iem'?'IEM':'Micro'}</td>
@@ -807,6 +813,21 @@ document.getElementById('advSens').onchange=e=>{
 };
 document.getElementById('advFit').onclick=fitPlanToScan;
 document.getElementById('advRecalc').onclick=()=>{ computeIM(); renderAll(); setSt('Produits d\'intermodulation recalculés.'); };
+
+// ── Plan « à recalculer » après ajout de matériel ─────────────────────
+function updatePlanDirty(){ const el=document.getElementById('planDirtyBar'); if(el) el.style.display=S.planDirty?'inline-flex':'none'; }
+function markPlanDirty(){ S.planDirty=true; updatePlanDirty(); }
+function clearPlanDirty(){ S.planDirty=false; updatePlanDirty(); }
+// recoordonne et applique : par zones en mode Avancé multi-zones, sinon global
+function applyAutoPlan(){
+  if(!S.ch.length){ setSt('Lancez d\'abord l\'analyse TNT (onglet Tableau).'); return false; }
+  if(!S.mics.length){ setSt('Ajoutez d\'abord des micros.'); return false; }
+  const multiZone=S.mode==='adv'&&new Set(S.mics.map(m=>micCoord(m)==='global'?'G':zoneKeyOfMic(m))).size>1;
+  if(multiZone){ generateGroupPlans(); }
+  else { const r=generatePlan({mics:S.mics,render:false}); S.mics.forEach((m,i)=>{ if(r.placed[i]!=null) m.freq=r.placed[i]; }); computeIM(); renderAll(); }
+  clearPlanDirty(); return true;
+}
+document.getElementById('planDirtyBtn').onclick=()=>{ if(applyAutoPlan()) setSt('Plan recalculé et appliqué.'); };
 document.getElementById('impFile').onchange=(ev)=>{
   const file=ev.target.files&&ev.target.files[0];
   if(!file)return;
@@ -1027,15 +1048,20 @@ function setupPicker(cfg){
 function addUnits(band,sp,count,model,brand,kind,err){
   const fmin=band[1],fmax=band[2],bw=sp>=1000?sp:200;
   const base=model+(band[0]?' '+band[0]:'');
-  let added=0;
+  let added=0,fallback=0;
   for(let i=0;i<count;i++){
-    const freq=autoAssign(fmin,fmax,sp,S.curGroup);
-    if(!freq){err.textContent=`Plus de fréquence libre dans cette gamme (${added}/${count} placés)`;err.style.display='inline';break;}
+    // placement provisoire : on ne bloque jamais l'ajout (scan, IM, saturation).
+    // À défaut de slot libre, fréquence d'attente dans la gamme → à recoordonner.
+    let freq=autoAssign(fmin,fmax,sp,S.curGroup);
+    if(!freq){ freq=parseFloat(Math.min(fmax-0.05,fmin+0.2+(added*(sp/1000))).toFixed(3)); fallback++; }
     const tntC=S.ch.find(c=>c.occupied&&freq>=c.freq_start&&freq<c.freq_end);
     S.mics.push({id:Date.now()+i,name:count>1?base+' '+(added+1):base,brand,model,band:band[0]||'',kind,freq,fmin,fmax,bw,spacing:sp,tntConflict:!!tntC,group:S.curGroup||'Groupe 1',color:MC[S.mics.length%MC.length],imHits:[]});
     computeIM(); added++;
   }
+  err.style.display='none';
+  markPlanDirty();                 // matériel ajouté → plan à recoordonner
   renderAll();
+  setSt(`${added} ${kind==='iem'?'IEM':'micro(s)'} ajouté(s)`+(fallback?` (${fallback} en attente de coordination)`:'')+' — recalculez le plan.');
 }
 
 setupPicker({brand:'selBrand', model:'selModel', band:'selBand', count:'micCount', btn:'addBtn',    hint:'hint',  err:'addErr',  catalog:MIC_CATALOG, kind:'mic'});
@@ -1426,6 +1452,7 @@ function generatePlan(opts){
 function applyPlan(){
   let n=0;
   S.planSlots.forEach((sl,i)=>{if(S.mics[i]&&sl&&sl.freq!=null){S.mics[i].freq=sl.freq;n++;}});
+  clearPlanDirty();
   computeIM(); renderAll(); setSt(`Plan appliqué — ${n} fréquence(s)`);
 }
 
@@ -1640,6 +1667,7 @@ function generateGroupPlans(){
   });
   h+='</div>';
   out.innerHTML=h;
+  clearPlanDirty();
   setSt(`Plan par zone appliqué — ${okT}/${S.mics.length} sur ${nZones} zone(s).`);
 }
 // Chips d'affichage/masquage des groupes dans le spectre (clic = bascule)
@@ -1679,7 +1707,7 @@ function renderAll(){
   syncImBars();
   const gp=document.getElementById('pane-groups');
   if(gp&&gp.classList.contains('on')) renderGroups();
-  renderGroupChips(); renderAdvList();
+  renderGroupChips(); renderAdvList(); updatePlanDirty();
 }
 
 // Cellule « Émetteur » d'un canal TV : nom / lieu (distance) · mux
@@ -1822,6 +1850,7 @@ function scanDbAt(f){
 }
 let specCurX=null; // position X du curseur de lecture (px CSS), null si hors zone
 let placeArmed=null; // id du micro en attente de placement manuel (clic sur le spectre)
+let specHoverMic=null; // id du micro survolé (porteuse) dans le Spectre avancé
 // largeur du couloir d'échelle dBm à gauche : présent seulement quand un scan
 // est chargé (sinon 0 → tracé plein cadre, comportement inchangé).
 const axGutter=()=>(S.scan&&S.scan.points&&S.scan.points.length)?40:0;
@@ -2143,6 +2172,20 @@ function freqAtEvent(cv,clientX){
   const u=specU0+(x/PW)*(specU1-specU0);
   return fOfU(u);
 }
+// micro dont la porteuse est la plus proche du curseur (à tolPx px près), ou null
+function micNearEvent(cv,clientX,tolPx){
+  const r=cv.getBoundingClientRect(),AX=axGutter(),PW=r.width-AX,span=specU1-specU0;
+  const cx=clientX-r.left; let best=null,bd=tolPx||6;
+  S.mics.forEach(m=>{ if(!isFinite(m.freq)||S.hiddenGroups[m.group])return;
+    const x=AX+(uOf(m.freq)-specU0)/span*PW; const d=Math.abs(x-cx);
+    if(d<=bd){ bd=d; best=m; } });
+  return best;
+}
+// surligne la ligne du tableau (Spectre avancé) correspondant au micro id
+function highlightAdvRow(id){
+  const w=document.getElementById('advMicList'); if(!w) return;
+  w.querySelectorAll('tr[data-row]').forEach(tr=>tr.classList.toggle('row-hi',parseInt(tr.dataset.row)===id));
+}
 // placement manuel : pose la fréquence du micro armé là où l'on clique, et la verrouille
 function placeArmedAt(cv,clientX){
   const m=S.mics.find(x=>x.id===placeArmed); placeArmed=null;
@@ -2162,6 +2205,7 @@ function placeArmedAt(cv,clientX){
 function attachSpec(cvId){
   const cv=document.getElementById(cvId);
   if(!cv)return;
+  const isAdv=cvId==='cvAdv';   // sélection/surlignage des porteuses : onglet avancé
   cv.style.cursor='grab';
   cv.addEventListener('wheel',e=>{
     e.preventDefault();
@@ -2176,10 +2220,25 @@ function attachSpec(cvId){
   let drag=null,curRAF=0;
   const curRedraw=()=>{ if(!curRAF) curRAF=requestAnimationFrame(()=>{curRAF=0;drawSpec();}); };
   // curseur de lecture : suit la souris (throttlé par requestAnimationFrame)
-  cv.addEventListener('mousemove',e=>{ const r=cv.getBoundingClientRect(); specCurX=e.clientX-r.left; if(!drag) curRedraw(); });
-  cv.addEventListener('mouseleave',()=>{ specCurX=null; curRedraw(); });
+  cv.addEventListener('mousemove',e=>{
+    const r=cv.getBoundingClientRect(); specCurX=e.clientX-r.left;
+    if(isAdv&&!drag&&placeArmed==null){           // survol d'une porteuse → surligne sa ligne
+      const m=micNearEvent(cv,e.clientX,6),id=m?m.id:null;
+      if(id!==specHoverMic){ specHoverMic=id; highlightAdvRow(id); }
+      cv.style.cursor=m?'pointer':'grab';
+    }
+    if(!drag) curRedraw();
+  });
+  cv.addEventListener('mouseleave',()=>{ specCurX=null; if(isAdv&&specHoverMic!=null){ specHoverMic=null; highlightAdvRow(null); } curRedraw(); });
   cv.addEventListener('mousedown',e=>{
     if(placeArmed!=null){ placeArmedAt(cv,e.clientX); return; }   // mode placement manuel
+    if(isAdv){                                                    // clic sur une porteuse → sélection + ré-placement
+      const m=micNearEvent(cv,e.clientX,6);
+      if(m){ placeArmed=m.id; renderAdvList(); highlightAdvRow(m.id);
+        const tr=document.querySelector('#advMicList tr[data-row="'+m.id+'"]'); if(tr&&tr.scrollIntoView) tr.scrollIntoView({block:'nearest'});
+        cv.style.cursor='crosshair';
+        setSt(`${m.name} sélectionné (${m.freq.toFixed(3)} MHz) — cliquez la nouvelle fréquence sur le spectre.`); return; }
+    }
     drag={x:e.clientX,u0:specU0,u1:specU1};cv.style.cursor='grabbing';
   });
   window.addEventListener('mousemove',e=>{
