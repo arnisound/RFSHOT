@@ -169,6 +169,7 @@ tr:hover td{background:var(--bg2)}
     <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
       <button class="btn btn-xs" id="clearBtn" style="border-color:var(--red);color:var(--red)"><i class="ti ti-trash"></i> Tout effacer</button>
       <button class="btn btn-xs" id="csvBtn" title="Exporter le plan en CSV"><i class="ti ti-download"></i> CSV</button>
+      <button class="btn btn-xs" id="reportBtn" title="Rapport imprimable (PDF) : plan, analyse IM, score de fiabilité, fréquences de secours et contexte TNT/scan — pour archivage et cross-validation."><i class="ti ti-file-text"></i> Rapport</button>
     </div>
   </div>
 
@@ -282,11 +283,15 @@ tr:hover td{background:var(--bg2)}
   <div class="plan-pad">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
       <strong>Plan fréquences automatique</strong>
-      <span style="font-size:11px;color:var(--text2)">Les produits IM sont dirigés vers les canaux TV occupés.</span>
-      <button class="btn btn-purple" id="genBtn" title="Garantit zéro IM 2 tons (2fA−fB, 3fA−2fB) sur chaque porteuse et dirige les IM vers les canaux TV occupés (sinon vers quelques canaux libres sacrifiés). Les IM 3 sources sont minimisées. Place tous les micros, jusqu'à 50."><i class="ti ti-wand"></i> Génération standard</button>
-      <button class="btn btn-purple" id="advBtn" title="Mode strict : aucune IM 3 sources (fA+fB−fC) tolérée sur les porteuses, et minimisation des IM5 à 3 sources. Plus exigeant : peut ne pas placer tous les micros sur les gros plans."><i class="ti ti-sparkles"></i> Génération avancée</button>
-      <button class="btn btn-purple" id="robBtn" title="Mode robuste : aucune IM3 (2fA−fB), IM5 (3fA−2fB), 3TX (fA+fB−fC) NI IM5 à 3 sources tolérée sur une porteuse. Le plus sûr — mais place potentiellement moins de micros sur les gros plans."><i class="ti ti-shield-check"></i> Génération robuste</button>
-      <button class="btn btn-purple" id="maxBtn" title="Capacité max : cale le plus de porteuses possible, en partant du principe que les émetteurs sont espacés (≥ 2 m) — les IM d'ordre élevé deviennent faibles. Garde IM resserrée, mais espacement constructeur conservé et canaux TNT protégés."><i class="ti ti-arrows-maximize"></i> Capacité max</button>
+      <button class="btn btn-purple" id="autoGenBtn" style="padding:9px 20px;font-size:13px" title="Génère le plan le plus fiable possible : essaie automatiquement du plus sûr (IM3+IM5+IM7+3TX) au plus permissif selon le nombre de liaisons, le scan et l'espace disponible, et retient le meilleur (capacité + score de fiabilité)."><i class="ti ti-wand"></i> Générer (auto)</button>
+      <span class="adv-only" style="display:inline-flex;align-items:center;gap:6px">
+        <span class="sep"></span>
+        <span style="font-size:11px;color:var(--text3)">Forcer un mode :</span>
+        <button class="btn btn-xs" id="genBtn" title="Zéro IM 2 tons (2fA−fB, 3fA−2fB) sur chaque porteuse ; IM 3 sources minimisées. Place le plus de micros."><i class="ti ti-wand"></i> Standard</button>
+        <button class="btn btn-xs" id="advBtn" title="Strict : aucune IM 3 sources (fA+fB−fC) tolérée + minimisation des IM5 à 3 sources."><i class="ti ti-sparkles"></i> Avancée</button>
+        <button class="btn btn-xs" id="robBtn" title="Le plus sûr : aucune IM3, IM5, IM7 (4fA−3fB) 2 tons, 3TX (fA+fB−fC) ni IM5 à 3 sources sur une porteuse. Au-delà de Workbench (qui ne calcule pas l'IM7)."><i class="ti ti-shield-check"></i> Robuste (IM7)</button>
+        <button class="btn btn-xs" id="maxBtn" title="Capacité max : cale le plus de porteuses, émetteurs supposés espacés (IM d'ordre élevé faibles), garde resserrée."><i class="ti ti-arrows-maximize"></i> Capacité max</button>
+      </span>
       <button class="btn btn-xs" id="regenBtn" style="display:none" title="Propose un autre plan équivalent (tirage différent)"><i class="ti ti-refresh"></i> Régénérer</button>
       <button class="btn btn-xs btn-green" id="applyBtn" style="display:none"><i class="ti ti-check"></i> Appliquer aux micros</button>
     </div>
@@ -1181,13 +1186,75 @@ function micStatusBadge(m){
 }
 
 // ── PLAN AUTO ─────────────────────────────────────────────────────────
+// Auto intelligent : essaie du plus sûr au plus permissif et retient le
+// meilleur (capacité d'abord, puis score de fiabilité). generatePlan est
+// déterministe sans shuffle → re-rendu identique au candidat évalué.
+function generateAuto(){
+  if(!S.ch.length){ document.getElementById('planOut').innerHTML='<span style="color:var(--red)">Lancez d\'abord l\'analyse TNT.</span>'; return; }
+  if(!S.mics.length){ document.getElementById('planOut').innerHTML='<span style="color:var(--red)">Ajoutez d\'abord des micros / IEM.</span>'; return; }
+  const tries=[{rob:true},{adv:true},{},{max:true}];
+  let best=null;
+  for(const t of tries){
+    const r=generatePlan({mics:S.mics,render:false,...t});
+    if(!best||r.reliab.value>best.r.reliab.value){ best={r,opts:t}; }
+    if(t.rob&&r.nOK===S.mics.length&&r.reliab.grade==='Excellent') break;  // optimal d'emblée
+  }
+  generatePlan({mics:S.mics,...best.opts});   // re-rendu (déterministe)
+  const lbl=best.opts.rob?'robuste (IM3/5/7+3TX)':(best.opts.adv?'avancé':(best.opts.max?'capacité max':'standard'));
+  setSt(`Plan auto : mode ${lbl} retenu — ${best.r.nOK}/${S.mics.length} placés · fiabilité ${best.r.reliab.grade}.`);
+}
+document.getElementById('autoGenBtn').onclick=generateAuto;
 document.getElementById('genBtn').onclick=()=>generatePlan({adv:false});
 document.getElementById('advBtn').onclick=()=>generatePlan({adv:true});
 document.getElementById('robBtn').onclick=()=>generatePlan({rob:true});
 document.getElementById('maxBtn').onclick=()=>generatePlan({max:true});
 document.getElementById('regenBtn').onclick=()=>generatePlan({adv:S.planAdv,rob:S.planRob,max:S.planMax,shuffle:true});
+
+// ── Rapport pro imprimable (PDF via l'impression du navigateur) ───────
+function exportReport(){
+  if(!S.mics.length){ setSt('Aucune liaison à exporter.'); return; }
+  computeIM();
+  const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const date=new Date().toLocaleString('fr-FR');
+  const occ=S.ch.filter(c=>c.occupied).length;
+  const conf2=S.mics.filter(m=>m.imHits&&m.imHits.length).length;
+  const conf3=S.mics.filter(m=>m.imHits3&&m.imHits3.length).length;
+  const tnt=S.mics.filter(m=>m.tntConflict).length;
+  const spares=S.ch.length?sparesFor(S.mics.map((m,i)=>i),4):[];
+  const stat=m=>m.tntConflict?'⚠ TNT':(m.imHits&&m.imHits.length?'IM×'+m.imHits.length:(m.imHits3&&m.imHits3.length?'3TX·'+m.imHits3.length:'OK'));
+  const rows=S.mics.map((m,i)=>`<tr><td>${i+1}</td><td>${esc(m.name)}</td><td>${esc(m.group||'')}</td><td>${m.kind==='iem'?'IEM':'Micro'}</td><td>${esc((m.brand||'')+' '+(m.model||''))}</td><td class="f">${isFinite(m.freq)?m.freq.toFixed(3):'—'}${m.locked?' 🔒':''}</td><td>${m.fmin}–${m.fmax}</td><td>${stat(m)}</td></tr>`).join('');
+  const ok=conf2===0&&conf3===0&&tnt===0;
+  const html=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Plan de fréquences HF — ${esc(date)}</title>
+  <style>body{font:13px/1.5 system-ui,sans-serif;color:#111;margin:24px;max-width:900px}
+  h1{font-size:19px;margin:0 0 2px}h2{font-size:14px;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:3px}
+  .sub{color:#666;font-size:12px;margin-bottom:14px}.kpi{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}
+  .b{border:1px solid #ddd;border-radius:6px;padding:6px 10px;font-size:12px}.ok{color:#2c6e0b}.warn{color:#a32d2d}
+  table{border-collapse:collapse;width:100%;font-size:12px;margin-top:6px}th,td{border:1px solid #ddd;padding:4px 7px;text-align:left}
+  th{background:#f4f4f6}td.f{font-family:ui-monospace,monospace;font-weight:600}
+  .no-print{margin:16px 0}button{padding:8px 16px;font-size:13px;cursor:pointer}
+  @media print{.no-print{display:none}body{margin:0}}</style></head><body>
+  <div class="no-print"><button onclick="print()">🖨️ Imprimer / Enregistrer en PDF</button></div>
+  <h1>📡 Plan de fréquences HF</h1>
+  <div class="sub">Édité le ${esc(date)} · ${S.mics.length} liaison(s) · localisation ${S.lat.toFixed(4)}, ${S.lon.toFixed(4)} · ${occ} canaux TNT occupés${S.scan?(' · scan « '+esc(S.scan.name)+' »'+(S.useScanBlock?' (plan calé)':'')):''}</div>
+  <div class="kpi">
+    <span class="b ${ok?'ok':'warn'}">${ok?'✓ Plan sans conflit détecté':'⚠ '+(conf2+conf3+tnt)+' conflit(s) à revoir'}</span>
+    <span class="b">${conf2} IM 2 tons</span><span class="b">${conf3} 3TX</span><span class="b">${tnt} sur canal TNT</span>
+  </div>
+  <h2>Plan de fréquences</h2>
+  <table><thead><tr><th>#</th><th>Liaison</th><th>Groupe</th><th>Type</th><th>Matériel</th><th>Fréquence (MHz)</th><th>Plage</th><th>Statut</th></tr></thead><tbody>${rows}</tbody></table>
+  <h2>Fréquences de secours (coordonnées)</h2>
+  <div>${spares.length?spares.map(f=>f.toFixed(3)+' MHz').join(' · '):'—'}</div>
+  <h2>Méthode</h2>
+  <div class="sub">Coordination : TNT France (Arcom) + scan mesuré · IM3/IM5/IM7 (2 tons) + 3TX (fA+fB−fC) écartées des porteuses · à tester sur site, émetteurs allumés un à un, dimmers/LED actifs.</div>
+  </body></html>`;
+  const w=window.open('','_blank');
+  if(!w){ setSt('Autorisez les pop-ups pour générer le rapport.'); return; }
+  w.document.write(html); w.document.close();
+  setSt('Rapport généré — utilisez « Imprimer / PDF ».');
+}
+document.getElementById('reportBtn').onclick=exportReport;
 document.getElementById('applyBtn').onclick=applyPlan;
-document.getElementById('autoBtn').onclick=()=>{showTab('plan');generatePlan({adv:false});};
+document.getElementById('autoBtn').onclick=()=>{showTab('plan');generateAuto();};
 function updateGuardInfo(){ const el=document.getElementById('guardInfo'); if(el) el.textContent='→ garde effective '+Math.round(imGuardMHz()*1000)+' kHz'; }
 document.getElementById('setTxDist').onchange=e=>{S.txDist=e.target.value;updateGuardInfo();};
 document.getElementById('setGuard').onchange=e=>{S.guardMode=e.target.value;updateGuardInfo();};
@@ -1268,9 +1335,11 @@ function generatePlan(opts){
   const imMask=maskNew();   // IM 2 tons du plan (± garde)
   const im3Mask=maskNew();  // IM 3 tons (fA+fB−fC) du plan (± garde étroite)
   const im53Mask=maskNew(); // IM5 3 sources du plan (mode avancé)
+  const im7Mask=maskNew();  // IM7 2 tons (4fA−3fB) — mode robuste seulement
   const carMask=maskNew();  // porteuses posées (± garde)
   const polluted=new Set(); // canaux libres « sacrifiés » (contiennent déjà des IM)
   const pairIM=(a,b)=>[2*a-b,2*b-a,3*a-2*b,3*b-2*a];
+  const pair7=(a,b)=>[4*a-3*b,4*b-3*a];   // produits du 7e ordre (puissance modérée)
   // les 9 produits IM5 à 3 sources d'un triplet (3x−a−b, 2x+a−2b, …)
   const tri5=(x,a,b)=>[3*x-a-b,3*a-x-b,3*b-x-a,2*x+a-2*b,2*x+b-2*a,2*a+x-2*b,2*a+b-2*x,2*b+x-2*a,2*b+a-2*x];
 
@@ -1286,6 +1355,7 @@ function generatePlan(opts){
       for(const im of [freq+a-b,freq+b-a,a+b-freq]) maskMark(im3Mask,im,GUARD3);
       if(adv) for(const im of tri5(freq,a,b)) maskMark(im53Mask,im,GUARD53);
     }
+    if(rob) for(const c of setF) for(const im of pair7(freq,c.freq)) maskMark(im7Mask,im,GUARD53);
     placed[idx]=freq; setF.push({freq,sp}); maskMark(carMask,freq,GUARD);
   }
   // porteuse externe imposée (ex. fréquences « Global » réservées partout) : même
@@ -1293,6 +1363,7 @@ function generatePlan(opts){
   function seedFixed(freq,sp){
     for(const c of setF) for(const im of pairIM(freq,c.freq)){ maskMark(imMask,im,GUARD); const ch=chOf(im); if(ch!=null&&legal(im)&&!inOcc(im)) polluted.add(ch); }
     for(let i=0;i<setF.length;i++)for(let j=i+1;j<setF.length;j++){ const a=setF[i].freq,b=setF[j].freq; for(const im of [freq+a-b,freq+b-a,a+b-freq]) maskMark(im3Mask,im,GUARD3); if(adv) for(const im of tri5(freq,a,b)) maskMark(im53Mask,im,GUARD53); }
+    if(rob) for(const c of setF) for(const im of pair7(freq,c.freq)) maskMark(im7Mask,im,GUARD53);
     setF.push({freq,sp}); maskMark(carMask,freq,GUARD);
   }
   (opts.fixed||[]).concat(globalReserved()).forEach(fx=>{ if(isFinite(fx.freq)) seedFixed(fx.freq,fx.sp||0.35); });
@@ -1350,8 +1421,9 @@ function generatePlan(opts){
         }
         if(v>0) continue;            // 3TX (fA+fB−fC) : interdit (avancé + robuste)
         if(rob){
-          // mode robuste : aucune IM5 à 3 sources non plus → 1er candidat 100 % propre
-          let bad=maskHit(im53Mask,c.f)?1:0;
+          // mode robuste : aucune IM5 à 3 sources ni IM7 2 tons non plus → 1er candidat 100 % propre
+          let bad=(maskHit(im53Mask,c.f)||maskHit(im7Mask,c.f))?1:0;
+          if(!bad) for(const cc of setF){ for(const im of pair7(c.f,cc.freq)) if(maskHit(carMask,im)||Math.abs(im-c.f)<GUARD53){bad=1;break;} if(bad)break; }
           if(!bad) cnt5r: for(let i=0;i<setF.length;i++)for(let j=i+1;j<setF.length;j++){
             for(const im of tri5(c.f,setF[i].freq,setF[j].freq))
               if(maskHit(carMask,im)||Math.abs(im-c.f)<GUARD53){bad=1;break cnt5r;}
@@ -1404,7 +1476,25 @@ function generatePlan(opts){
       for(const im of tri5(freqs[i],freqs[j],freqs[k])) if(maskHit(car5,im)) res5++;
   }
 
-  const stats={placed,freqs,nOK,nKO,planIM,imTV,imFree,sacr,res3,res5,adv,rob,max};
+  // ── Score de fiabilité : marge IM mini (kHz) entre un produit 2 tons fort
+  //    (IM3/IM5) et une porteuse, + résidus, + capacité. Sert au tri du mode auto.
+  const sortedF=[...freqs].sort((a,b)=>a-b);
+  const nearCar=x=>{ if(!sortedF.length)return Infinity; if(x<=sortedF[0])return sortedF[0]-x; const hi=sortedF.length-1; if(x>=sortedF[hi])return x-sortedF[hi]; let lo=0,h=hi; while(h-lo>1){const md=(lo+h)>>1; if(sortedF[md]<x)lo=md;else h=md;} return Math.min(Math.abs(x-sortedF[lo]),Math.abs(x-sortedF[h])); };
+  let margin=Infinity,res2=0;
+  for(let i=0;i<freqs.length;i++)for(let j=i+1;j<freqs.length;j++)for(const im of pairIM(freqs[i],freqs[j])){
+    if(!legal(im)||inOcc(im))continue;            // hors bande utile / en TV occupée : sans danger
+    const d=nearCar(im); if(d<margin)margin=d; if(d<0.0005)res2++;
+  }
+  const marginKHz=isFinite(margin)?Math.round(margin*1000):null;
+  const guardKHz=Math.round(GUARD*1000);
+  let grade,gcolor;
+  if(nKO>0){grade='Partiel';gcolor='bWarn';}
+  else if(res2===0&&res3===0&&(marginKHz==null||marginKHz>=guardKHz)){grade='Excellent';gcolor='bOK';}
+  else if(res2===0&&res3<=2){grade='Bon';gcolor='bOK';}
+  else {grade='Acceptable';gcolor='bWarn';}
+  const reliab={marginKHz,res2,res3,capacity:nOK/Math.max(1,mics.length),grade,gcolor,guardKHz,
+    value:nOK*100000+Math.min(marginKHz||0,400)-res3*200-res2*5000-imFree*10};
+  const stats={placed,freqs,nOK,nKO,planIM,imTV,imFree,sacr,res3,res5,adv,rob,max,reliab};
   if(!render) return stats;
 
   S.planSlots=S.mics.map((m,i)=>({freq:placed[i],name:m.name,off:placed[i]!=null&&!S.ch.some(c=>placed[i]>=c.freq_start&&placed[i]<c.freq_end)}));
@@ -1412,6 +1502,7 @@ function generatePlan(opts){
   let h=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
     <span class="badge bMic">${max?'Capacité max · émetteurs ≥ 2 m (IM faibles tolérées)':(rob?'Mode robuste · IM3 + IM5 + 3TX (zéro sur porteuse)':(adv?'Mode avancé · 3 sources + IM5':'Mode standard'))}</span>
     <span class="badge ${nKO?'bWarn':'bOK'}">${nOK}/${mics.length} fréquences placées</span>
+    <span class="badge ${reliab.gcolor}" title="Marge mini entre une IM 2 tons (IM3/IM5) et une porteuse : ${reliab.marginKHz!=null?reliab.marginKHz+' kHz':'n/a'} · ${res3} IM 3 tons · capacité ${Math.round(reliab.capacity*100)}%. Score comparatif pour cross-validation.">Fiabilité : ${reliab.grade}${reliab.marginKHz!=null?' · marge '+reliab.marginKHz+' kHz':''}</span>
     ${mics.filter(isLk).length?`<span class="badge bLock" title="Porteuses conservées telles quelles lors de la régénération"><i class="ti ti-lock"></i> ${mics.filter(isLk).length} verrouillée(s)</span>`:''}
     <span class="badge bTV">${imTV} IM en zone TV</span>
     ${imFree>0?`<span class="badge bWarn">${imFree} IM en zone libre${sacr.length?' (canaux sacrifiés : C'+sacr.join(', C')+')':''}</span>`:'<span class="badge bOK">0 IM en zone libre ✓</span>'}
