@@ -206,6 +206,7 @@ tr:hover td{background:var(--bg2)}
 <div class="tabs">
   <div class="tab on" data-t="table"><i class="ti ti-table"></i> Tableau</div>
   <div class="tab" data-t="spectrum"><i class="ti ti-wave-sine"></i> Spectre</div>
+  <div class="tab adv-only" data-t="advspec"><i class="ti ti-chart-dots"></i> Spectre avancé</div>
   <div class="tab" data-t="plan"><i class="ti ti-wand"></i> Plan auto</div>
   <div class="tab adv-only" data-t="groups"><i class="ti ti-layout-grid"></i> Groupes</div>
   <div class="tab" data-t="fplan"><i class="ti ti-edit"></i> Plan fréquences</div>
@@ -243,6 +244,30 @@ tr:hover td{background:var(--bg2)}
       <div class="leg-i"><div class="leg-b" style="background:#185FA5;height:2px;align-self:center"></div>Scan mesuré (importé)</div>
       <div class="leg-i" id="liLock" style="display:none"><i class="ti ti-lock" style="font-size:11px"></i>Porteuse verrouillée</div>
     </div>
+  </div>
+</div>
+
+<!-- SPECTRE AVANCÉ -->
+<div class="pane adv-only" id="pane-advspec">
+  <div class="spec-pad">
+    <div class="spec-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <strong style="font-size:13px">Spectre avancé</strong>
+      <span id="advHint" style="font-size:11px;color:var(--text2)">« Placer » sur une liaison, puis cliquez sur le spectre pour fixer sa fréquence (verrouillée).</span>
+      <span style="flex:1"></span>
+      <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px" title="Marge au-dessus du plancher de bruit du scan : plus la sensibilité est élevée, plus on évite de fréquences proches du bruit.">Sensibilité scan
+        <select id="advSens">
+          <option value="12">Faible (+12 dB)</option>
+          <option value="8" selected>Normale (+8 dB)</option>
+          <option value="5">Élevée (+5 dB)</option>
+          <option value="3">Maximale (+3 dB)</option>
+        </select>
+      </label>
+      <button class="btn btn-xs btn-purple" id="advFit" title="Recalcule le plan en évitant les pics et le bruit mesurés par le scan."><i class="ti ti-adjustments-check"></i> Caler sur le scan</button>
+      <button class="btn btn-xs btn-green" id="advRecalc" title="Recalcule les produits d'intermodulation après placement manuel."><i class="ti ti-refresh"></i> Recalculer les IM</button>
+    </div>
+    <div id="imBarAdv" class="im-bar" style="margin-bottom:8px"></div>
+    <canvas id="cvAdv" height="230" aria-label="Spectre avancé — placement manuel"></canvas>
+    <div id="advMicList" style="margin-top:14px"></div>
   </div>
 </div>
 
@@ -619,6 +644,7 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
   t.classList.add('on');
   document.getElementById('pane-'+t.dataset.t).classList.add('on');
   if(t.dataset.t==='spectrum'){ renderGroupChips(); drawSpec(); }
+  if(t.dataset.t==='advspec'){ renderAdvList(); drawSpec(); }
   if(t.dataset.t==='groups') renderGroups();
 }));
 function showTab(id){
@@ -740,6 +766,47 @@ function fitPlanToScan(){
 document.getElementById('impBtn').onclick=()=>document.getElementById('impFile').click();
 document.getElementById('scanClear').onclick=()=>{S.scan=null;S.useScanBlock=false;renderScanInfo();drawSpec();setSt('Scan retiré.');};
 document.getElementById('scanFit').onclick=fitPlanToScan;
+
+// ── Onglet Spectre avancé : liste des liaisons + placement manuel ─────
+function renderAdvList(){
+  const w=document.getElementById('advMicList'); if(!w) return;
+  if(!S.mics.length){ w.innerHTML='<div style="color:var(--text3);font-size:12px">Aucune liaison — ajoutez des micros / IEM dans l\'onglet Tableau.</div>'; return; }
+  let h=`<table><thead><tr><th>#</th><th>Liaison</th><th>Type</th><th>Plage</th><th>Fréquence (MHz)</th><th>Statut</th><th>Placer</th><th style="width:60px">Verrou</th></tr></thead><tbody>`;
+  S.mics.forEach((m,i)=>{
+    const armed=placeArmed===m.id;
+    h+=`<tr class="${m.locked?'r-lock':''}">
+      <td><span class="dot" style="background:${grpColor(m.group)||m.color}"></span>${i+1}</td>
+      <td>${m.name}</td>
+      <td style="font-size:11px;color:var(--text2)">${m.kind==='iem'?'IEM':'Micro'}</td>
+      <td style="font-size:11px;color:var(--text2)">${m.fmin}–${m.fmax}</td>
+      <td><input type="number" value="${isFinite(m.freq)?m.freq:''}" step="0.025" data-advf="${m.id}" style="width:96px;font-family:monospace"></td>
+      <td>${micStatusBadge(m)}</td>
+      <td><button class="btn btn-xs${armed?' btn-purple':''}" data-place="${m.id}" title="Cliquez puis pointez le spectre">${armed?'cliquez le spectre…':'<i class="ti ti-crosshair"></i> Placer'}</button></td>
+      <td><button class="btn btn-xs lockbtn${m.locked?' on':''}" data-advlock="${m.id}" title="${m.locked?'Verrouillé — clic pour libérer':'Verrouiller'}"><i class="ti ti-${m.locked?'lock':'lock-open'}"></i></button></td>
+    </tr>`;
+  });
+  w.innerHTML=h+'</tbody></table>';
+  w.querySelectorAll('input[data-advf]').forEach(inp=>inp.onchange=()=>{
+    const m=S.mics.find(x=>x.id===parseInt(inp.dataset.advf)); if(!m)return;
+    const f=parseFloat(inp.value); if(isNaN(f))return;
+    const v=Math.max(m.fmin,Math.min(m.fmax,parseFloat(f.toFixed(3))));
+    m.freq=v; m.locked=true; m.tntConflict=S.ch.some(c=>c.occupied&&v>=c.freq_start&&v<c.freq_end);
+    renderAll(); setSt(`🔒 ${m.name} → ${v.toFixed(3)} MHz (IM à recalculer).`);
+  });
+  w.querySelectorAll('[data-place]').forEach(b=>b.onclick=()=>{
+    const id=parseInt(b.dataset.place); placeArmed=(placeArmed===id)?null:id; renderAdvList();
+    const el=document.getElementById('cvAdv'); if(el) el.style.cursor=placeArmed?'crosshair':'grab';
+    setSt(placeArmed?'Cliquez sur le spectre pour placer la fréquence.':'Placement annulé.');
+  });
+  w.querySelectorAll('[data-advlock]').forEach(b=>b.onclick=()=>toggleLock(parseInt(b.dataset.advlock)));
+}
+document.getElementById('advSens').onchange=e=>{
+  S.scanMargin=parseFloat(e.target.value)||8;
+  if(S.useScanBlock){ renderScanInfo(); drawSpec(); }
+  setSt(`Sensibilité scan : +${S.scanMargin} dB au-dessus du plancher de bruit.`);
+};
+document.getElementById('advFit').onclick=fitPlanToScan;
+document.getElementById('advRecalc').onclick=()=>{ computeIM(); renderAll(); setSt('Produits d\'intermodulation recalculés.'); };
 document.getElementById('impFile').onchange=(ev)=>{
   const file=ev.target.files&&ev.target.files[0];
   if(!file)return;
@@ -1612,7 +1679,7 @@ function renderAll(){
   syncImBars();
   const gp=document.getElementById('pane-groups');
   if(gp&&gp.classList.contains('on')) renderGroups();
-  renderGroupChips();
+  renderGroupChips(); renderAdvList();
 }
 
 // Cellule « Émetteur » d'un canal TV : nom / lieu (distance) · mux
@@ -1754,6 +1821,7 @@ function scanDbAt(f){
   return Math.abs(pts[lo].f-f)<=Math.abs(pts[hi].f-f)?pts[lo].db:pts[hi].db;
 }
 let specCurX=null; // position X du curseur de lecture (px CSS), null si hors zone
+let placeArmed=null; // id du micro en attente de placement manuel (clic sur le spectre)
 // largeur du couloir d'échelle dBm à gauche : présent seulement quand un scan
 // est chargé (sinon 0 → tracé plein cadre, comportement inchangé).
 const axGutter=()=>(S.scan&&S.scan.points&&S.scan.points.length)?40:0;
@@ -1837,13 +1905,16 @@ function drawPlanSpectrum(){
   ctx.textAlign='left';ctx.fillText('MHz',2,axisY);
 }
 
+// Redessine le spectre sur tous les canvas visibles (onglet Spectre + Spectre avancé)
 function drawSpec(){
-  const cv=document.getElementById('cv');
+  ['cv','cvAdv'].forEach(id=>{ const el=document.getElementById(id); if(el&&el.offsetParent!==null) drawSpecOn(el); });
+}
+function drawSpecOn(cv){
   if(!cv||!cv.parentElement)return;
   const ctx=cv.getContext('2d');
   const anyLock=S.mics.some(m=>m.locked);
   const lockH=anyLock?20:0;            // bandeau bas pour les cadenas sous l'échelle
-  const W=cv.parentElement.offsetWidth-32||640,BH=208,H=230+lockH;
+  const W=(cv.parentElement.offsetWidth-32)||640,BH=208,H=230+lockH;
   const D=window.devicePixelRatio||1;
   cv.width=W*D;cv.height=H*D;cv.style.width=W+'px';cv.style.height=H+'px';
   ctx.scale(D,D);
@@ -2066,9 +2137,30 @@ function drawSpec(){
   ctx.fillText(hint,W-4,12);
 }
 
-// interactions zoom / déplacement (attachées une seule fois)
-(function(){
-  const cv=document.getElementById('cv');
+// position fréquentielle (MHz) sous un événement souris, selon la vue courante
+function freqAtEvent(cv,clientX){
+  const r=cv.getBoundingClientRect(),AX=axGutter(),PW=r.width-AX,x=clientX-r.left-AX;
+  const u=specU0+(x/PW)*(specU1-specU0);
+  return fOfU(u);
+}
+// placement manuel : pose la fréquence du micro armé là où l'on clique, et la verrouille
+function placeArmedAt(cv,clientX){
+  const m=S.mics.find(x=>x.id===placeArmed); placeArmed=null;
+  if(cv) cv.style.cursor='grab';
+  if(!m){ renderAdvList(); return; }
+  const info=freqAtEvent(cv,clientX);
+  if(info.gap){ setSt('Bande non exploitable — placement ignoré.'); renderAdvList(); return; }
+  let f=Math.round(info.f/0.025)*0.025;
+  f=Math.max(m.fmin,Math.min(m.fmax,f));                 // borné à la plage du modèle
+  m.freq=parseFloat(f.toFixed(3)); m.locked=true;
+  m.tntConflict=S.ch.some(c=>c.occupied&&m.freq>=c.freq_start&&m.freq<c.freq_end);
+  renderAdvList(); drawSpec();                           // IM recalculées via le bouton dédié
+  setSt(`🔒 ${m.name} placé manuellement sur ${m.freq.toFixed(3)} MHz (IM à recalculer).`);
+}
+
+// interactions zoom / déplacement / placement — attachées à un canvas spectre
+function attachSpec(cvId){
+  const cv=document.getElementById(cvId);
   if(!cv)return;
   cv.style.cursor='grab';
   cv.addEventListener('wheel',e=>{
@@ -2086,7 +2178,10 @@ function drawSpec(){
   // curseur de lecture : suit la souris (throttlé par requestAnimationFrame)
   cv.addEventListener('mousemove',e=>{ const r=cv.getBoundingClientRect(); specCurX=e.clientX-r.left; if(!drag) curRedraw(); });
   cv.addEventListener('mouseleave',()=>{ specCurX=null; curRedraw(); });
-  cv.addEventListener('mousedown',e=>{drag={x:e.clientX,u0:specU0,u1:specU1};cv.style.cursor='grabbing';});
+  cv.addEventListener('mousedown',e=>{
+    if(placeArmed!=null){ placeArmedAt(cv,e.clientX); return; }   // mode placement manuel
+    drag={x:e.clientX,u0:specU0,u1:specU1};cv.style.cursor='grabbing';
+  });
   window.addEventListener('mousemove',e=>{
     if(!drag)return;
     const r=cv.getBoundingClientRect(),sp=drag.u1-drag.u0,PW=r.width-axGutter();
@@ -2134,7 +2229,8 @@ function drawSpec(){
     if(e.touches.length===0){tdrag=null;pinch=null;}
     else if(e.touches.length===1){pinch=null;tdrag={x:e.touches[0].clientX,u0:specU0,u1:specU1};}
   },{passive:false});
-})();
+}
+attachSpec('cv'); attachSpec('cvAdv');
 
 // ── Filtres IM (IM3 / 3TX / IM5 / Bande seule) — barre dupliquée dans les
 //    onglets Tableau et Spectre, état partagé dans S, synchronisé entre les deux.
@@ -2145,7 +2241,7 @@ function imBarHTML(){
     +'<label class="chk" title="Produits du 5e ordre à 2 émetteurs (3fA−2fB)"><input type="checkbox" data-flag="show5"'+(S.show5?' checked':'')+'> IM5</label>'
     +'<label class="chk" title="N\'afficher que ce qui tombe dans la bande TNT 470–694 MHz"><input type="checkbox" data-flag="onlyB"'+(S.onlyB?' checked':'')+'> Bande seule</label>';
 }
-function initImBars(){['imBarTable','imBarSpec'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=imBarHTML();});}
+function initImBars(){['imBarTable','imBarSpec','imBarAdv'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=imBarHTML();});}
 function syncImBars(){document.querySelectorAll('input[data-flag]').forEach(x=>{x.checked=!!S[x.dataset.flag];});}
 document.addEventListener('change',e=>{
   const inp=e.target;
