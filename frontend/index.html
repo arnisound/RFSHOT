@@ -2682,16 +2682,17 @@ function renderFreqPlan(){
     return;
   }
   const grpNames=groupList();
+  const showGrp=S.mode==='adv';   // colonne Groupe réservée au mode avancé (cachée pour les débutants)
   let h=`<datalist id="fpGrpNames">${grpNames.map(g=>`<option value="${g.replace(/"/g,'&quot;')}">`).join('')}</datalist>
   <table><thead><tr>
-    <th>#</th><th>Nom</th><th>Groupe</th><th>Matériel</th><th>Fréquence (MHz)</th><th>Plage</th><th>Statut</th><th title="Score de fiabilité : 0 = interférences/bruit, 5 = porteuse sûre">Fiabilité</th><th style="width:70px">Verrou</th><th style="width:28px"></th>
+    <th>#</th><th>Nom</th>${showGrp?'<th>Groupe</th>':''}<th>Matériel</th><th>Fréquence (MHz)</th><th>Plage</th><th>Statut</th><th title="Score de fiabilité : 0 = interférences/bruit, 5 = porteuse sûre">Fiabilité</th><th style="width:70px">Verrou</th><th style="width:28px"></th>
   </tr></thead><tbody>`;
   S.mics.forEach((m,i)=>{
     const st=micStatusBadge(m);
     h+=`<tr class="${m.locked?'r-lock':''}">
       <td><span class="dot" style="background:${m.color}"></span>${i+1}</td>
       <td><input type="text" value="${(m.name||'').replace(/"/g,'&quot;')}" data-fp="name" data-i="${i}" style="width:140px"></td>
-      <td><input type="text" value="${(m.group||'').replace(/"/g,'&quot;')}" list="fpGrpNames" data-fp="group" data-i="${i}" style="width:110px" title="Groupe (scène, zone…) — gérez la coordination dans l'onglet Groupes"></td>
+      ${showGrp?`<td><input type="text" value="${(m.group||'').replace(/"/g,'&quot;')}" list="fpGrpNames" data-fp="group" data-i="${i}" style="width:110px" title="Groupe (scène, zone…) — gérez la coordination dans l'onglet Groupes"></td>`:''}
       <td style="font-size:11px;color:var(--text2)">${m.brand?m.brand+' ':''}${m.model||'—'}${m.band?' '+m.band:''}</td>
       <td><input type="number" value="${m.freq}" step="0.025" data-fp="freq" data-i="${i}" style="width:100px;font-family:monospace"></td>
       <td style="font-size:11px;color:var(--text2)">${m.fmin}–${m.fmax}</td>
