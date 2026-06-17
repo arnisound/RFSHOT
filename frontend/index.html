@@ -387,7 +387,17 @@ tr:hover td{background:var(--bg2)}
       <strong>Plan de fréquences</strong>
       <span style="font-size:11px;color:var(--text2)">Éditez noms et fréquences ; les statuts TNT / IM se recalculent aussitôt.</span>
       <button class="btn btn-xs" id="fpAdd"><i class="ti ti-plus"></i> Ajouter une ligne</button>
-      <button class="btn btn-xs" id="fpCsv"><i class="ti ti-download"></i> Exporter CSV</button>
+      <span style="flex:1"></span>
+      <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px" title="Format d'export. Les profils constructeur produisent une liste Nom/Fréquence importable dans le logiciel (le comportement exact dépend de sa version).">Format
+        <select id="expProfile">
+          <option value="generic">CSV universel (détaillé)</option>
+          <option value="wwb">Shure Wireless Workbench</option>
+          <option value="wsm">Sennheiser WSM</option>
+        </select>
+      </label>
+      <button class="btn btn-xs" id="fpCsv"><i class="ti ti-download"></i> Exporter</button>
+      <button class="btn btn-xs" id="fpImport" title="Réimporter un plan (CSV) modifié dans un logiciel constructeur : les fréquences des liaisons de même nom sont mises à jour, les lignes inconnues ajoutées."><i class="ti ti-file-import"></i> Importer un plan</button>
+      <input type="file" id="fpImportFile" accept=".csv,.txt,text/csv,text/plain" hidden>
     </div>
     <div class="spec-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
       <button class="btn btn-xs scan-imp" title="Importer un scan de spectre (CSV) : Shure WWB, Sennheiser WSM, RF Explorer, tinySA…"><i class="ti ti-file-upload"></i> Importer un scan</button>
@@ -2608,8 +2618,68 @@ function exportPlanCsv(){
   const slug=(S.meta.title||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
   a.download=(slug||'rfshot_plan')+'_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
 }
-document.getElementById('csvBtn').onclick=exportPlanCsv;
-document.getElementById('fpCsv').onclick=exportPlanCsv;
+const csvq=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+// Profils constructeur : liste Nom + fréquence (MHz), importable comme liste de
+// fréquences. CRLF + point décimal pour les logiciels Windows.
+function buildVendorCsv(header){
+  const rows=[header];
+  S.mics.forEach(m=>{ if(isFinite(m.freq)) rows.push(`${csvq(m.name)},${m.freq.toFixed(3)}`); });
+  return rows.join('\r\n');
+}
+function vendorName(profile){
+  const slug=((S.meta.title||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''))||'rfshot_plan';
+  const tag=profile==='wwb'?'_shure_wwb':(profile==='wsm'?'_sennheiser_wsm':'');
+  return slug+tag+'_'+new Date().toISOString().slice(0,10)+'.csv';
+}
+function exportPlan(profile){
+  if(!S.mics.length){ setSt('Aucune liaison à exporter.'); return; }
+  if(profile==='wwb'||profile==='wsm'){
+    const text=buildVendorCsv(profile==='wwb'?'Name,Frequency (MHz)':'Name,Frequency [MHz]');
+    const b=new Blob([text],{type:'text/csv;charset=utf-8;'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=vendorName(profile); a.click();
+    setSt('Export '+(profile==='wwb'?'Shure Wireless Workbench':'Sennheiser WSM')+' (liste de fréquences) généré.');
+  } else { exportPlanCsv(); setSt('Export CSV universel généré.'); }
+}
+// Réimport d'un plan modifié (constructeur ou universel) : met à jour les
+// fréquences des liaisons de même nom, ajoute les lignes inconnues.
+function importPlanCsv(text){
+  const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const parsed=[];
+  for(const line of lines){
+    const delim=line.includes(';')?';':(line.includes('\t')?'\t':',');
+    const cells=line.split(delim).map(c=>c.trim().replace(/^"|"$/g,''));
+    let freq=null,name=null;
+    for(const c of cells){
+      const v=parseFloat(delim===';'?c.replace(',','.'):c);
+      if(!isNaN(v)&&/[0-9]/.test(c)){
+        let f=v; if(f>=400000&&f<=960000) f/=1000;          // kHz → MHz
+        if(f>=450&&f<=960){ if(freq==null) freq=parseFloat(f.toFixed(3)); continue; }
+      }
+      if(name==null && c && isNaN(parseFloat(c))) name=c;     // 1er texte = nom
+    }
+    if(freq!=null) parsed.push({name,freq});
+  }
+  if(!parsed.length){ setSt('Aucune fréquence reconnue dans le fichier importé.'); return; }
+  let updated=0,added=0; const used=new Set();
+  parsed.forEach((p,k)=>{
+    let mi=-1;
+    if(p.name) mi=S.mics.findIndex((x,i)=>!used.has(i)&&(x.name||'').trim().toLowerCase()===p.name.trim().toLowerCase());
+    if(mi>=0){ const m=S.mics[mi]; used.add(mi); m.freq=snapFreq(m,p.freq); m.locked=true; m.tntConflict=S.ch.some(c=>c.occupied&&m.freq>=c.freq_start&&m.freq<c.freq_end); updated++; }
+    else { const f=parseFloat(p.freq.toFixed(3)); S.mics.push({id:Date.now()+k,name:p.name||('Import '+(added+1)),brand:'',model:'Importé',band:'',kind:'mic',freq:f,fmin:470,fmax:694,bw:200,spacing:350,tuneStep:25,locked:true,tntConflict:S.ch.some(c=>c.occupied&&f>=c.freq_start&&f<c.freq_end),group:S.curGroup||'Groupe 1',color:MC[S.mics.length%MC.length],imHits:[]}); added++; }
+  });
+  computeIM(); renderAll();
+  setSt(`Plan importé : ${updated} fréquence(s) mise(s) à jour${added?', '+added+' ligne(s) ajoutée(s)':''}. IM recalculées.`);
+}
+document.getElementById('csvBtn').onclick=()=>exportPlan('generic');
+document.getElementById('fpCsv').onclick=()=>exportPlan(document.getElementById('expProfile').value);
+document.getElementById('fpImport').onclick=()=>document.getElementById('fpImportFile').click();
+document.getElementById('fpImportFile').onchange=ev=>{
+  const file=ev.target.files&&ev.target.files[0]; if(!file)return;
+  const rd=new FileReader();
+  rd.onload=()=>{ try{ importPlanCsv(String(rd.result)); }catch(e){ setSt('Erreur lecture du plan : '+e.message); } };
+  rd.onerror=()=>setSt('Impossible de lire le fichier.');
+  rd.readAsText(file); ev.target.value='';
+};
 
 function setSt(t){document.getElementById('st').textContent=t;}
 window.addEventListener('resize',()=>drawSpec());
