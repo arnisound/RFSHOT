@@ -831,7 +831,7 @@ function renderAdvList(){
   w.querySelectorAll('input[data-advf]').forEach(inp=>inp.onchange=()=>{
     const m=S.mics.find(x=>x.id===parseInt(inp.dataset.advf)); if(!m)return;
     const f=parseFloat(inp.value); if(isNaN(f))return;
-    const v=Math.max(m.fmin,Math.min(m.fmax,parseFloat(f.toFixed(3))));
+    const v=snapFreq(m,f);
     m.freq=v; m.locked=true; m.tntConflict=S.ch.some(c=>c.occupied&&v>=c.freq_start&&v<c.freq_end);
     renderAll(); setSt(`🔒 ${m.name} → ${v.toFixed(3)} MHz (IM à recalculer).`);
   });
@@ -1091,7 +1091,7 @@ function addUnits(band,sp,count,model,brand,kind,err){
     let freq=autoAssign(fmin,fmax,sp,S.curGroup);
     if(!freq){ freq=parseFloat(Math.min(fmax-0.05,fmin+0.2+(added*(sp/1000))).toFixed(3)); fallback++; }
     const tntC=S.ch.find(c=>c.occupied&&freq>=c.freq_start&&freq<c.freq_end);
-    S.mics.push({id:Date.now()+i,name:count>1?base+' '+(added+1):base,brand,model,band:band[0]||'',kind,freq,fmin,fmax,bw,spacing:sp,tntConflict:!!tntC,group:S.curGroup||'Groupe 1',color:MC[S.mics.length%MC.length],imHits:[]});
+    S.mics.push({id:Date.now()+i,name:count>1?base+' '+(added+1):base,brand,model,band:band[0]||'',kind,freq,fmin,fmax,bw,spacing:sp,tuneStep:25,tntConflict:!!tntC,group:S.curGroup||'Groupe 1',color:MC[S.mics.length%MC.length],imHits:[]});
     computeIM(); added++;
   }
   err.style.display='none';
@@ -1170,6 +1170,28 @@ function coexist(a,b){
   if(za==='global'||zb==='global') return true;
   return zoneKeyOfMic(a)===zoneKeyOfMic(b);
 }
+// ── Modèle de niveau IM approximatif (dBc sous la porteuse) ───────────
+// Permet un score calibré (marges en dBc) au lieu d'un binaire « tombe / ne
+// tombe pas ». Valeurs nominales ajustables — pas un mesuré matériel.
+const IM_DBC={im3:0,im5:-12,im7:-22,tx3:-6,tx5:-18}; // niveau nominal par type de produit
+const TXDIST_DBC={tight:6,near:0,far:-10};           // couplage selon distance émetteurs
+const IM_RES_SLOPE=400;                              // réjection FI du récepteur hors bande (dB/MHz)
+function txDistDbc(){return TXDIST_DBC[S.txDist||'near']||0;}
+function imBaseDbc(im){return im.f3!=null?(im.ord===3?IM_DBC.tx3:IM_DBC.tx5):(im.ord===3?IM_DBC.im3:IM_DBC.im5);}
+// niveau effectif d'un produit (base dBc) à l'écart d (MHz) d'une porteuse de demi-bande half
+function imEffDbc(base,d,half){return base+txDistDbc()-(d<=half?0:(d-half)*IM_RES_SLOPE);}
+// pire agresseur (dBc) atteignant la porteuse du micro m (−200 = aucun produit proche)
+function micAggressorDbc(m){
+  if(!isFinite(m.freq)||!S.im) return -200;
+  const half=(m.bw||200)/2000, win=half+0.15; let worst=-200;
+  for(const im of S.im){
+    if(!im.src.every(si=>S.mics[si]&&coexist(S.mics[si],m))) continue;
+    const d=Math.abs(im.freq-m.freq); if(d>win) continue;
+    const lvl=imEffDbc(imBaseDbc(im),d,half); if(lvl>worst) worst=lvl;
+  }
+  return worst;
+}
+
 function computeIM(){
   S.im=[];
   const F=S.mics.map(m=>m.freq);
@@ -1219,12 +1241,15 @@ function micStatusBadge(m){
 // ── Score de fiabilité par liaison : 0 (interférences/bruit) → 5 étoiles
 //    (porteuse 100 % sûre). Combine conflit TNT, IM 2 tons, 3TX et scan.
 function micReliability(m){
-  if(!isFinite(m.freq)) return {stars:0,reasons:['Aucune fréquence assignée']};
+  if(!isFinite(m.freq)) return {stars:0,dbc:null,reasons:['Aucune fréquence assignée']};
   let s=5; const r=[];
-  if(m.tntConflict){ s-=3.5; r.push('Sur un canal TNT occupé'); }
-  const n2=m.imHits?m.imHits.length:0, n3=m.imHits3?m.imHits3.length:0;
-  if(n2){ s-=Math.min(3.5,1.5+(n2-1)*0.75); r.push(n2+' IM 2 tons (IM3/IM5) sur la porteuse'); }
-  if(n3){ s-=Math.min(1.5,n3*0.5); r.push(n3+' produit(s) 3 émetteurs (3TX)'); }
+  if(m.tntConflict){ s-=3.5; r.push('Canal TNT occupé'); }
+  const dbc=micAggressorDbc(m);    // niveau du produit IM le plus fort atteignant la porteuse
+  if(dbc>-180){
+    // marge en dBc → pénalité étoiles : ≈ −48 dBc (inoffensif) → 0 ; 0 dBc (en bande) → −4,5
+    const pen=Math.max(0,Math.min(4.5,(dbc+48)/11));
+    if(pen>=0.25){ s-=pen; r.push('IM la plus forte ≈ '+Math.round(dbc)+' dBc'); }
+  }
   if(S.scan&&S.scan.points&&S.scan.points.length){
     const d=scanDbAt(m.freq), thr=scanThreshold();
     if(d!=null&&thr!=null){
@@ -1233,7 +1258,7 @@ function micReliability(m){
     }
   }
   s=Math.max(0,Math.min(5,s));
-  return {stars:Math.round(s*2)/2, reasons:r};
+  return {stars:Math.round(s*2)/2, dbc:dbc>-180?Math.round(dbc):null, reasons:r};
 }
 function micStars(m){
   const {stars,reasons}=micReliability(m);
@@ -1242,32 +1267,52 @@ function micStars(m){
   for(let i=0;i<5;i++) ic+= i<full?'<i class="ti ti-star-filled"></i>'
     : (i===full&&half?'<i class="ti ti-star-half-filled"></i>':'<i class="ti ti-star"></i>');
   const col=stars>=4.5?'var(--green)':(stars>=3?'#BA7517':'var(--red)');
-  const tip=`Fiabilité ${stars}/5 — ${reasons.length?reasons.join(' · '):'porteuse sûre, aucun conflit détecté'}`;
+  const tip=`Fiabilité ${stars}/5 — ${reasons.length?reasons.join(' · '):'porteuse sûre, aucun conflit détecté'} (niveaux estimés, à valider sur site)`;
   return `<span style="color:${col};white-space:nowrap;font-size:12px" title="${tip}">${ic}</span>`;
 }
 // ── PLAN AUTO ─────────────────────────────────────────────────────────
-// Auto intelligent : essaie du plus sûr au plus permissif et retient le
-// meilleur (capacité d'abord, puis score de fiabilité). generatePlan est
-// déterministe sans shuffle → re-rendu identique au candidat évalué.
+// Optimisation globale par redémarrages multiples (best-of-N) : on génère N
+// plans valides (ordres + choix de slots tirés au sort, graine reproductible)
+// et on garde celui qui maximise le score de fiabilité (objectif en dBc).
+// Budget inversement proportionnel à la taille du plan.
+function autoTries(){ const n=Math.max(1,S.mics.length); return Math.min(30,Math.max(6,Math.round(300/n))); }
+function bestPlan(opts,tries){
+  let best=null;
+  for(let s=1;s<=tries;s++){
+    const r=generatePlan({...opts,mics:S.mics,render:false,shuffle:true,seed:s});
+    if(!r.reliab) return null;                 // pas de canaux TNT / pas de micros
+    if(!best||r.reliab.value>best.r.reliab.value) best={r,seed:s};
+  }
+  return best;
+}
+// Génère le meilleur plan d'un mode donné et l'affiche (rejoué via sa graine).
+function renderBestPlan(opts){
+  const bp=bestPlan(opts,autoTries());
+  if(!bp){ generatePlan({mics:S.mics,...opts}); return null; }   // affiche le message d'erreur
+  generatePlan({mics:S.mics,...opts,shuffle:true,seed:bp.seed});
+  return bp;
+}
+// Auto intelligent : essaie du plus sûr au plus permissif, chaque mode optimisé
+// par best-of-N, et retient le meilleur (capacité d'abord, puis fiabilité dBc).
 function generateAuto(){
   if(!S.ch.length){ document.getElementById('planOut').innerHTML='<span style="color:var(--red)">Lancez d\'abord l\'analyse TNT.</span>'; return; }
   if(!S.mics.length){ document.getElementById('planOut').innerHTML='<span style="color:var(--red)">Ajoutez d\'abord des micros / IEM.</span>'; return; }
-  const tries=[{rob:true},{adv:true},{},{max:true}];
+  const tries=autoTries(), modes=[{rob:true},{adv:true},{},{max:true}];
   let best=null;
-  for(const t of tries){
-    const r=generatePlan({mics:S.mics,render:false,...t});
-    if(!best||r.reliab.value>best.r.reliab.value){ best={r,opts:t}; }
-    if(t.rob&&r.nOK===S.mics.length&&r.reliab.grade==='Excellent') break;  // optimal d'emblée
+  for(const t of modes){
+    const bp=bestPlan(t,tries);
+    if(!best||bp.r.reliab.value>best.bp.r.reliab.value){ best={opts:t,bp}; }
+    if(t.rob&&bp.r.nOK===S.mics.length&&bp.r.reliab.grade==='Excellent') break;  // optimal d'emblée
   }
-  generatePlan({mics:S.mics,...best.opts});   // re-rendu (déterministe)
+  generatePlan({mics:S.mics,...best.opts,shuffle:true,seed:best.bp.seed});        // rejoue exactement le meilleur
   const lbl=best.opts.rob?'robuste (IM3/5/7+3TX)':(best.opts.adv?'avancé':(best.opts.max?'capacité max':'standard'));
-  setSt(`Plan auto : mode ${lbl} retenu — ${best.r.nOK}/${S.mics.length} placés · fiabilité ${best.r.reliab.grade}.`);
+  setSt(`Plan auto optimisé (${tries}× par mode) : mode ${lbl} retenu — ${best.bp.r.nOK}/${S.mics.length} placés · fiabilité ${best.bp.r.reliab.grade}.`);
 }
 document.getElementById('autoGenBtn').onclick=generateAuto;
-document.getElementById('genBtn').onclick=()=>generatePlan({adv:false});
-document.getElementById('advBtn').onclick=()=>generatePlan({adv:true});
-document.getElementById('robBtn').onclick=()=>generatePlan({rob:true});
-document.getElementById('maxBtn').onclick=()=>generatePlan({max:true});
+document.getElementById('genBtn').onclick=()=>renderBestPlan({adv:false});
+document.getElementById('advBtn').onclick=()=>renderBestPlan({adv:true});
+document.getElementById('robBtn').onclick=()=>renderBestPlan({rob:true});
+document.getElementById('maxBtn').onclick=()=>renderBestPlan({max:true});
 document.getElementById('regenBtn').onclick=()=>generatePlan({adv:S.planAdv,rob:S.planRob,max:S.planMax,shuffle:true});
 
 // ── Rapport pro imprimable (PDF via l'impression du navigateur) ───────
@@ -1357,6 +1402,16 @@ const PLAN_BANDS=[[470,694],[822,838],[863,865],[1785,1805],[2400,2483.5]];
 //                porteuse, et IM5 à 3 sources minimisées en plus.
 // opts.shuffle : régénération — un tirage aléatoire départage les candidats
 //                quasi équivalents pour proposer un plan différent.
+// RNG déterministe (mulberry32) : permet de rejouer exactement le meilleur
+// tirage trouvé par l'optimisation multi-redémarrages (best-of-N).
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+// Aligne une fréquence sur la grille d'accord réelle du modèle (pas de syntonisation,
+// défaut 25 kHz) depuis sa borne basse → fréquence réellement saisissable au récepteur.
+function snapFreq(m,f){
+  const step=Math.max(0.005,(m.tuneStep||25)/1000);
+  const v=m.fmin+Math.round((f-m.fmin)/step)*step;
+  return parseFloat(Math.max(m.fmin,Math.min(m.fmax,v)).toFixed(3));
+}
 function generatePlan(opts){
   opts=opts||{};
   const mics=opts.mics||S.mics;            // sous-ensemble (coordination par zone) ou tous
@@ -1381,8 +1436,9 @@ function generatePlan(opts){
   const GUARD=max?0.05:imGuardMHz();
 
   // micros les plus contraints d'abord (plage étroite, spacing large) ;
-  // en régénération, l'ordre des ex æquo est tiré au hasard
-  const rk=mics.map(()=>Math.random());
+  // en régénération, l'ordre des ex æquo est tiré au hasard (graine reproductible)
+  const rnd=opts.seed!=null?mulberry32(opts.seed>>>0):Math.random;
+  const rk=mics.map(()=>rnd());
   const order=mics.map((m,i)=>i).filter(i=>!isLk(mics[i])).sort((x,y)=>{
     const wx=mics[x].fmax-mics[x].fmin, wy=mics[y].fmax-mics[y].fmin;
     return (wx!==wy?wx-wy:(mics[y].spacing||350)-(mics[x].spacing||350))||(shuffle?rk[x]-rk[y]:0);
@@ -1437,7 +1493,8 @@ function generatePlan(opts){
     // Phase 1 : tous les candidats sûrs côté 2 tons, notés pour concentrer
     // les IM dans les canaux TV occupés (sinon dans les canaux sacrifiés).
     const cands=[];
-    for(let f=m.fmin; f<=m.fmax; f=parseFloat((f+0.025).toFixed(3))){
+    const step=Math.max(0.005,(m.tuneStep||25)/1000);   // grille d'accord du modèle
+    for(let f=m.fmin; f<=m.fmax+1e-9; f=parseFloat((f+step).toFixed(3))){
       if(blocked(f)) continue;
       if(setF.some(c=>Math.abs(f-c.freq)<Math.max(sp,c.sp))) continue;
       // la porteuse ne doit pas se poser sur une IM déjà créée
@@ -1462,7 +1519,7 @@ function generatePlan(opts){
       const minD=setF.length?Math.min(...setF.map(c=>Math.abs(f-c.freq))):5;
       // une porteuse posée sur une IM 3 tons existante part avec un malus ;
       // en régénération un bruit aléatoire départage les quasi-équivalents
-      cands.push({f,c3:maskHit(im3Mask,f)?1:0,score:score+Math.min(minD,1.5)+(shuffle?Math.random()*2:0)});
+      cands.push({f,c3:maskHit(im3Mask,f)?1:0,score:score+Math.min(minD,1.5)+(shuffle?rnd()*2:0)});
     }
     // Phase 2 : parmi les meilleurs candidats (les indemnes d'IM 3 tons
     // d'abord), choisir celui qui n'est touché par aucune IM 3 tons et n'en
@@ -1536,24 +1593,32 @@ function generatePlan(opts){
       for(const im of tri5(freqs[i],freqs[j],freqs[k])) if(maskHit(car5,im)) res5++;
   }
 
-  // ── Score de fiabilité : marge IM mini (kHz) entre un produit 2 tons fort
-  //    (IM3/IM5) et une porteuse, + résidus, + capacité. Sert au tri du mode auto.
+  // ── Score de fiabilité : marge IM mini (kHz) ET pire agresseur (dBc) entre
+  //    un produit 2 tons fort (IM3/IM5/IM7) et une porteuse. Sert au tri auto
+  //    et d'objectif à l'optimisation globale.
   const sortedF=[...freqs].sort((a,b)=>a-b);
   const nearCar=x=>{ if(!sortedF.length)return Infinity; if(x<=sortedF[0])return sortedF[0]-x; const hi=sortedF.length-1; if(x>=sortedF[hi])return x-sortedF[hi]; let lo=0,h=hi; while(h-lo>1){const md=(lo+h)>>1; if(sortedF[md]<x)lo=md;else h=md;} return Math.min(Math.abs(x-sortedF[lo]),Math.abs(x-sortedF[h])); };
-  let margin=Infinity,res2=0;
-  for(let i=0;i<freqs.length;i++)for(let j=i+1;j<freqs.length;j++)for(const im of pairIM(freqs[i],freqs[j])){
-    if(!legal(im)||inOcc(im))continue;            // hors bande utile / en TV occupée : sans danger
-    const d=nearCar(im); if(d<margin)margin=d; if(d<0.0005)res2++;
+  let margin=Infinity,res2=0,worstDbc=-200;
+  const HALF=0.075; // demi-bande récepteur typique (≈150 kHz) pour le modèle dBc
+  for(let i=0;i<freqs.length;i++)for(let j=i+1;j<freqs.length;j++){
+    const prods=[[2*freqs[i]-freqs[j],IM_DBC.im3],[2*freqs[j]-freqs[i],IM_DBC.im3],
+                 [3*freqs[i]-2*freqs[j],IM_DBC.im5],[3*freqs[j]-2*freqs[i],IM_DBC.im5]];
+    if(rob){ prods.push([4*freqs[i]-3*freqs[j],IM_DBC.im7],[4*freqs[j]-3*freqs[i],IM_DBC.im7]); }
+    for(const [im,base] of prods){
+      if(!legal(im)||inOcc(im))continue;          // hors bande utile / en TV occupée : sans danger
+      const d=nearCar(im); if(d<margin)margin=d; if(d<0.0005)res2++;
+      const lvl=imEffDbc(base,d,HALF); if(lvl>worstDbc) worstDbc=lvl;
+    }
   }
   const marginKHz=isFinite(margin)?Math.round(margin*1000):null;
-  const guardKHz=Math.round(GUARD*1000);
+  const dbc=worstDbc>-200?Math.round(worstDbc):null;
   let grade,gcolor;
   if(nKO>0){grade='Partiel';gcolor='bWarn';}
-  else if(res2===0&&res3===0&&(marginKHz==null||marginKHz>=guardKHz)){grade='Excellent';gcolor='bOK';}
-  else if(res2===0&&res3<=2){grade='Bon';gcolor='bOK';}
+  else if(res2===0&&res3===0&&worstDbc<=-45){grade='Excellent';gcolor='bOK';}
+  else if(res2===0&&worstDbc<=-25&&res3<=nOK*2){grade='Bon';gcolor='bOK';}
   else {grade='Acceptable';gcolor='bWarn';}
-  const reliab={marginKHz,res2,res3,capacity:nOK/Math.max(1,mics.length),grade,gcolor,guardKHz,
-    value:nOK*100000+Math.min(marginKHz||0,400)-res3*200-res2*5000-imFree*10};
+  const reliab={marginKHz,dbc,res2,res3,capacity:nOK/Math.max(1,mics.length),grade,gcolor,
+    value:nOK*100000+(-Math.max(worstDbc,-60))*100-res3*200-res2*5000-imFree*10};
   const stats={placed,freqs,nOK,nKO,planIM,imTV,imFree,sacr,res3,res5,adv,rob,max,reliab};
   if(!render) return stats;
 
@@ -1562,7 +1627,7 @@ function generatePlan(opts){
   let h=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
     <span class="badge bMic">${max?'Capacité max · émetteurs ≥ 2 m (IM faibles tolérées)':(rob?'Mode robuste · IM3 + IM5 + 3TX (zéro sur porteuse)':(adv?'Mode avancé · 3 sources + IM5':'Mode standard'))}</span>
     <span class="badge ${nKO?'bWarn':'bOK'}">${nOK}/${mics.length} fréquences placées</span>
-    <span class="badge ${reliab.gcolor}" title="Marge mini entre une IM 2 tons (IM3/IM5) et une porteuse : ${reliab.marginKHz!=null?reliab.marginKHz+' kHz':'n/a'} · ${res3} IM 3 tons · capacité ${Math.round(reliab.capacity*100)}%. Score comparatif pour cross-validation.">Fiabilité : ${reliab.grade}${reliab.marginKHz!=null?' · marge '+reliab.marginKHz+' kHz':''}</span>
+    <span class="badge ${reliab.gcolor}" title="Pire produit IM atteignant une porteuse : ${reliab.dbc!=null?reliab.dbc+' dBc':'aucun'} (marge ${reliab.marginKHz!=null?reliab.marginKHz+' kHz':'n/a'}) · ${res3} IM 3 tons · capacité ${Math.round(reliab.capacity*100)}%. Niveaux estimés (modèle), à valider sur site.">Fiabilité : ${reliab.grade}${reliab.dbc!=null?' · pire IM '+reliab.dbc+' dBc':''}</span>
     ${mics.filter(isLk).length?`<span class="badge bLock" title="Porteuses conservées telles quelles lors de la régénération"><i class="ti ti-lock"></i> ${mics.filter(isLk).length} verrouillée(s)</span>`:''}
     <span class="badge bTV">${imTV} IM en zone TV</span>
     ${imFree>0?`<span class="badge bWarn">${imFree} IM en zone libre${sacr.length?' (canaux sacrifiés : C'+sacr.join(', C')+')':''}</span>`:'<span class="badge bOK">0 IM en zone libre ✓</span>'}
@@ -2347,9 +2412,7 @@ function placeArmedAt(cv,clientX){
   if(!m){ renderAdvList(); return; }
   const info=freqAtEvent(cv,clientX);
   if(info.gap){ setSt('Bande non exploitable — placement ignoré.'); renderAdvList(); return; }
-  let f=Math.round(info.f/0.025)*0.025;
-  f=Math.max(m.fmin,Math.min(m.fmax,f));                 // borné à la plage du modèle
-  m.freq=parseFloat(f.toFixed(3)); m.locked=true;
+  m.freq=snapFreq(m,info.f); m.locked=true;              // aligné sur la grille d'accord du modèle
   m.tntConflict=S.ch.some(c=>c.occupied&&m.freq>=c.freq_start&&m.freq<c.freq_end);
   renderAdvList(); drawSpec();                           // IM recalculées via le bouton dédié
   setSt(`🔒 ${m.name} placé manuellement sur ${m.freq.toFixed(3)} MHz (IM à recalculer).`);
@@ -2504,7 +2567,7 @@ function renderFreqPlan(){
       else{
         const f=parseFloat(inp.value);
         if(isNaN(f))return;
-        m.freq=parseFloat(f.toFixed(3));
+        m.freq=snapFreq(m,f);
         m.tntConflict=S.ch.some(c=>c.occupied&&m.freq>=c.freq_start&&m.freq<c.freq_end);
       }
       computeIM(); renderAll();
@@ -2516,7 +2579,7 @@ function renderFreqPlan(){
 document.getElementById('fpAdd').onclick=()=>{
   const freq=autoAssign(470,694,350)||470.3;
   S.mics.push({id:Date.now(),name:'Ligne '+(S.mics.length+1),brand:'',model:'Libre',band:'',kind:'mic',
-    freq,fmin:470,fmax:694,bw:200,spacing:350,group:S.curGroup||'Groupe 1',
+    freq,fmin:470,fmax:694,bw:200,spacing:350,tuneStep:25,group:S.curGroup||'Groupe 1',
     tntConflict:S.ch.some(c=>c.occupied&&freq>=c.freq_start&&freq<c.freq_end),
     color:MC[S.mics.length%MC.length],imHits:[]});
   computeIM(); renderAll();
