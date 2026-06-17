@@ -1655,17 +1655,17 @@ function generatePlan(opts){
   S.planSlots=S.mics.map((m,i)=>({freq:placed[i],name:m.name,off:placed[i]!=null&&!S.ch.some(c=>placed[i]>=c.freq_start&&placed[i]<c.freq_end)}));
   const koNames=mics.filter((m,i)=>placed[i]==null).map(m=>m.name);
   let h=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-    <span class="badge bMic">${max?'Capacité max · émetteurs ≥ 2 m (IM faibles tolérées)':(rob?'Mode robuste · IM3 + IM5 + 3TX (zéro sur porteuse)':(adv?'Mode avancé · 3 sources + IM5':'Mode standard'))}</span>
     <span class="badge ${nKO?'bWarn':'bOK'}">${nOK}/${mics.length} fréquences placées</span>
     <span class="badge ${reliab.gcolor}" title="Pire produit IM atteignant une porteuse : ${reliab.dbc!=null?reliab.dbc+' dBc':'aucun'} (marge ${reliab.marginKHz!=null?reliab.marginKHz+' kHz':'n/a'}) · ${res3} IM 3 tons · capacité ${Math.round(reliab.capacity*100)}%. Niveaux estimés (modèle), à valider sur site.">Fiabilité : ${reliab.grade}${reliab.dbc!=null?' · pire IM '+reliab.dbc+' dBc':''}</span>
-    ${mics.filter(isLk).length?`<span class="badge bLock" title="Porteuses conservées telles quelles lors de la régénération"><i class="ti ti-lock"></i> ${mics.filter(isLk).length} verrouillée(s)</span>`:''}
-    <span class="badge bTV">${imTV} IM en zone TV</span>
-    ${imFree>0?`<span class="badge bWarn">${imFree} IM en zone libre${sacr.length?' (canaux sacrifiés : C'+sacr.join(', C')+')':''}</span>`:'<span class="badge bOK">0 IM en zone libre ✓</span>'}
     ${res3>0?`<span class="badge bWarn" title="Produits fA+fB−fC (3 émetteurs simultanés), plus faibles que les IM 2 tons">${res3} IM 3 tons sur porteuse</span>`:'<span class="badge bOK">0 IM sur les porteuses ✓</span>'}
-    ${adv?(res5>0?`<span class="badge bWarn" title="Produits du 5e ordre à 3 sources (3fA−fB−fC, 2fA+fB−2fC…), très faibles">${res5} IM5 3 sources résiduelles</span>`:'<span class="badge bOK">0 IM5 3 sources ✓</span>'):''}
+    ${mics.filter(isLk).length?`<span class="badge bLock" title="Porteuses conservées telles quelles lors de la régénération"><i class="ti ti-lock"></i> ${mics.filter(isLk).length} verrouillée(s)</span>`:''}
+    <span class="badge bMic adv-only">${max?'Capacité max · émetteurs ≥ 2 m (IM faibles tolérées)':(rob?'Mode robuste · IM3 + IM5 + 3TX (zéro sur porteuse)':(adv?'Mode avancé · 3 sources + IM5':'Mode standard'))}</span>
+    <span class="badge bTV adv-only" title="Produits d'intermodulation tombant dans des canaux TNT déjà occupés : sans danger pour vos liaisons.">${imTV} IM en zone TV</span>
+    ${imFree>0?`<span class="badge bWarn adv-only">${imFree} IM en zone libre${sacr.length?' (canaux sacrifiés : C'+sacr.join(', C')+')':''}</span>`:'<span class="badge bOK adv-only">0 IM en zone libre ✓</span>'}
+    ${adv?(res5>0?`<span class="badge bWarn adv-only" title="Produits du 5e ordre à 3 sources (3fA−fB−fC, 2fA+fB−2fC…), très faibles">${res5} IM5 3 sources résiduelles</span>`:'<span class="badge bOK adv-only">0 IM5 3 sources ✓</span>'):''}
   </div>`;
   if(koNames.length) h+=`<div style="color:var(--red);font-size:11px;margin-bottom:8px">⚠ Non placés (${max?'spectre saturé même au plus dense (espacement constructeur)':(rob?'contraintes IM3/IM5/3TX strictes — réessayez en avancé ou standard':(adv?'contrainte 3 sources stricte — réessayez en génération standard':'plage saturée'))}) : ${koNames.join(', ')}</div>`;
-  h+=`<div style="font-size:11px;color:var(--text2);margin:2px 0 4px">Aperçu spectre — porteuses sur la bande TNT 470–694 (et PMSE 823–838 si utilisée) · <i class="ti ti-lock" style="font-size:11px"></i> = verrouillée</div>`;
+  h+=`<div style="font-size:11px;color:var(--text2);margin:2px 0 4px">Aperçu spectre — porteuses sur la bande TNT 470–694 (et PMSE 823–838 si utilisée) · <i class="ti ti-lock" style="font-size:11px"></i> = verrouillée${S.scan&&S.scan.points&&S.scan.points.length?' · <span style="color:var(--blue)">tracé bleu = scan mesuré</span>':''}</div>`;
   h+=`<canvas id="planCv" height="78" style="display:block;width:100%;margin-bottom:14px;border-radius:8px;border:0.5px solid var(--border)"></canvas>`;
   h+='<div class="plan-grid">';
 
@@ -2164,6 +2164,28 @@ function drawPlanSpectrum(){
     const gx=lowW+gap/2;
     ctx.strokeStyle=dark?'rgba(255,255,255,.2)':'rgba(0,0,0,.15)';ctx.lineWidth=.5;ctx.setLineDash([2,2]);
     ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,bandH);ctx.stroke();ctx.setLineDash([]);
+  }
+  // scan importé : courbe mesurée (mise à l'échelle sur ses propres niveaux dans
+  // les bandes utiles) + seuil et zones évitées si le plan est calé dessus.
+  if(S.scan&&S.scan.points&&S.scan.points.length){
+    const pts=S.scan.points;
+    let vMax=-200,vMin=200;
+    for(const p of pts){ if(fx(p.f)<0)continue; if(p.db>vMax)vMax=p.db; if(p.db<vMin)vMin=p.db; }
+    if(vMax<vMin){ vMax=-20; vMin=-100; }
+    const bot=vMin-3,rng=Math.max(1,(vMax+3)-bot);
+    const yfor=db=>{let t=(db-bot)/rng;t=t<0?0:t>1?1:t;return (bandH-2)-t*(bandH-8);};
+    if(S.useScanBlock){
+      const thr=scanThreshold();
+      if(thr!=null){ const ty=yfor(thr);
+        ctx.strokeStyle=dark?'rgba(255,120,120,.7)':'rgba(163,45,45,.6)';ctx.lineWidth=.8;ctx.setLineDash([4,3]);
+        ctx.beginPath();ctx.moveTo(0,ty);ctx.lineTo(Wt,ty);ctx.stroke();ctx.setLineDash([]);
+      }
+      scanSpans().forEach(z=>{ const x1=fx(z.s),x2=fx(z.e); if(x1<0||x2<0||x2<=x1)return; ctx.fillStyle='rgba(163,45,45,.4)';ctx.fillRect(x1,0,x2-x1,3); });
+    }
+    ctx.strokeStyle=dark?'rgba(94,164,255,.9)':'rgba(24,95,165,.85)';ctx.lineWidth=1;
+    ctx.beginPath(); let started=false;
+    for(const p of pts){ const x=fx(p.f); if(x<0){started=false;continue;} const y=yfor(p.db); if(started)ctx.lineTo(x,y); else{ctx.moveTo(x,y);started=true;} }
+    ctx.stroke();
   }
   // porteuses (+ cadenas sous l'échelle pour les verrouillées)
   slots.forEach((sl,i)=>{
