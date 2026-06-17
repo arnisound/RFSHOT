@@ -303,7 +303,7 @@ tr:hover td{background:var(--bg2)}
   <div class="plan-pad">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
       <strong>Plan fréquences automatique</strong>
-      <button class="btn btn-purple" id="autoGenBtn" style="padding:9px 20px;font-size:13px" title="Génère le plan le plus fiable possible : essaie automatiquement du plus sûr (IM3+IM5+IM7+3TX) au plus permissif selon le nombre de liaisons, le scan et l'espace disponible, et retient le meilleur (capacité + score de fiabilité)."><i class="ti ti-wand"></i> Générer (auto)</button>
+      <button class="btn btn-purple" id="autoGenBtn" style="padding:9px 20px;font-size:13px" title="Génère le meilleur plan automatiquement : privilégie la capacité (packing) en concentrant les IM 2 tons et 3TX dans les canaux TNT occupés / quelques canaux libres sacrifiés, évite le scan importé, et retient le tirage le plus fiable (score dBc). Gère IM3, IM5 et 3TX. L'IM7 reste réservée au mode expert « Robuste »."><i class="ti ti-wand"></i> Générer (auto)</button>
       <span class="adv-only" style="display:inline-flex;align-items:center;gap:6px">
         <span class="sep"></span>
         <span style="font-size:11px;color:var(--text3)">Forcer un mode :</span>
@@ -1384,8 +1384,15 @@ document.getElementById('reportBtn').onclick=exportReport;
 document.getElementById('applyBtn').onclick=applyPlan;
 document.getElementById('autoBtn').onclick=()=>{showTab('plan');generateAuto();};
 function updateGuardInfo(){ const el=document.getElementById('guardInfo'); if(el) el.textContent='→ garde effective '+Math.round(imGuardMHz()*1000)+' kHz'; }
-document.getElementById('setTxDist').onchange=e=>{S.txDist=e.target.value;updateGuardInfo();};
-document.getElementById('setGuard').onchange=e=>{S.guardMode=e.target.value;updateGuardInfo();};
+// Distance émetteurs / Garde IM : vrais paramètres de coordination (largeur de
+// garde + couplage IM). Appliqués à la génération ; si un plan est déjà affiché,
+// on le recalcule aussitôt dans le mode courant pour rendre l'effet visible.
+function onCoordParamChange(){
+  updateGuardInfo();
+  if(S.planSlots&&S.planSlots.some(s=>s&&s.freq!=null)) generatePlan({adv:S.planAdv,rob:S.planRob,max:S.planMax,shuffle:true});
+}
+document.getElementById('setTxDist').onchange=e=>{S.txDist=e.target.value;onCoordParamChange();};
+document.getElementById('setGuard').onchange=e=>{S.guardMode=e.target.value;onCoordParamChange();};
 updateGuardInfo();
 
 // ── Zones d'exclusion manuelles ───────────────────────────────────────
