@@ -331,6 +331,9 @@ tr:hover td{background:var(--bg2)}
           <option value="large">Large (220 kHz)</option>
         </select>
       </label>
+      <label style="display:flex;align-items:center;gap:5px" title="Par défaut, on suppose les IEM derrière un combiner d'antenne : l'isolation entre ports réduit fortement l'intermod IEM↔IEM. Cochez si vos IEM sont en rack SANS combiner (antennes collées = pire cas).">
+        <input type="checkbox" id="setIemNoComb"> IEM sans combiner
+      </label>
       <span id="guardInfo" style="color:var(--text3)"></span>
     </div>
     <div class="adv-only" style="border-top:1px solid var(--border);padding-top:10px;margin-bottom:12px">
@@ -427,7 +430,7 @@ tr:hover td{background:var(--bg2)}
 
 <script>
 const MC=['#185FA5','#993556','#3B6D11','#854F0B','#534AB7','#0F6E56','#D85A30','#0C447C'];
-const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{},mode:'std',exclZones:[],spareN:0,useScanBlock:false,scanMargin:8,planDirty:false};
+const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{},mode:'std',exclZones:[],spareN:0,useScanBlock:false,scanMargin:8,planDirty:false,iemNoCombiner:false};
 const BACKEND='http://localhost:3001';
 
 // Réglages de coordination (onglet Plan auto) : la distance entre émetteurs
@@ -1187,11 +1190,16 @@ function coexist(a,b){
 // tombe pas ». Valeurs nominales ajustables — pas un mesuré matériel.
 const IM_DBC={im3:0,im5:-12,im7:-22,tx3:-6,tx5:-18}; // niveau nominal par type de produit
 const TXDIST_DBC={tight:6,near:0,far:-10};           // couplage selon distance émetteurs
+const IEM_COMBINER_DBC=-15;                          // IEM↔IEM via combiner : intermod fortement réduite (isolation des ports)
+const IEM_RACK_DBC=6;                                // IEM↔IEM en rack SANS combiner : antennes collées = pire cas
 const IM_RES_SLOPE=400;                              // réjection FI du récepteur hors bande (dB/MHz)
 function txDistDbc(){return TXDIST_DBC[S.txDist||'near']||0;}
 function imBaseDbc(im){return im.f3!=null?(im.ord===3?IM_DBC.tx3:IM_DBC.tx5):(im.ord===3?IM_DBC.im3:IM_DBC.im5);}
+// couplage (dBc) du produit selon ses sources : IEM↔IEM = combiner (ou rack si « sans
+// combiner ») ; sinon selon la distance émetteurs. srcKinds : tableau de booléens « est IEM ».
+function coupleDbc(allIEM){ return allIEM ? (S.iemNoCombiner?IEM_RACK_DBC:IEM_COMBINER_DBC) : txDistDbc(); }
 // niveau effectif d'un produit (base dBc) à l'écart d (MHz) d'une porteuse de demi-bande half
-function imEffDbc(base,d,half){return base+txDistDbc()-(d<=half?0:(d-half)*IM_RES_SLOPE);}
+function imEffDbc(base,d,half,off){return base+(off==null?txDistDbc():off)-(d<=half?0:(d-half)*IM_RES_SLOPE);}
 // pire agresseur (dBc) atteignant la porteuse du micro m (−200 = aucun produit proche)
 function micAggressorDbc(m){
   if(!isFinite(m.freq)||!S.im) return -200;
@@ -1260,7 +1268,8 @@ function micReliability(m){
   // IM 2 tons RÉELLEMENT dans la bande du récepteur (cohérent avec le statut) :
   // agresseurs forts, notées par niveau dBc estimé.
   let worst2=-200;
-  (m.imHits||[]).forEach(im=>{ const lvl=imEffDbc(imBaseDbc(im),Math.abs(im.freq-m.freq),half); if(lvl>worst2) worst2=lvl; });
+  const allIEM=im=>im.src&&im.src.length&&im.src.every(si=>S.mics[si]&&S.mics[si].kind==='iem');
+  (m.imHits||[]).forEach(im=>{ const lvl=imEffDbc(imBaseDbc(im),Math.abs(im.freq-m.freq),half,coupleDbc(allIEM(im))); if(lvl>worst2) worst2=lvl; });
   if(worst2>-180){
     const pen=Math.max(0,Math.min(4.5,(worst2+45)/10));   // ≈ −45 dBc → 0 ; 0 dBc → −4,5
     if(pen>=0.25){ s-=pen; r.push('IM 2 tons ≈ '+Math.round(worst2)+' dBc dans la bande'); }
@@ -1393,6 +1402,7 @@ function onCoordParamChange(){
 }
 document.getElementById('setTxDist').onchange=e=>{S.txDist=e.target.value;onCoordParamChange();};
 document.getElementById('setGuard').onchange=e=>{S.guardMode=e.target.value;onCoordParamChange();};
+document.getElementById('setIemNoComb').onchange=e=>{S.iemNoCombiner=e.target.checked;onCoordParamChange();renderAll();};
 updateGuardInfo();
 
 // ── Zones d'exclusion manuelles ───────────────────────────────────────
@@ -1635,16 +1645,19 @@ function generatePlan(opts){
   //    et d'objectif à l'optimisation globale.
   const sortedF=[...freqs].sort((a,b)=>a-b);
   const nearCar=x=>{ if(!sortedF.length)return Infinity; if(x<=sortedF[0])return sortedF[0]-x; const hi=sortedF.length-1; if(x>=sortedF[hi])return x-sortedF[hi]; let lo=0,h=hi; while(h-lo>1){const md=(lo+h)>>1; if(sortedF[md]<x)lo=md;else h=md;} return Math.min(Math.abs(x-sortedF[lo]),Math.abs(x-sortedF[h])); };
+  // kind parallèle à freqs : pour le couplage IEM↔IEM (combiner)
+  const freqIEM=[]; placed.forEach((f,i)=>{ if(f!=null) freqIEM.push(!!(mics[i]&&mics[i].kind==='iem')); });
   let margin=Infinity,res2=0,worstDbc=-200;
   const HALF=0.075; // demi-bande récepteur typique (≈150 kHz) pour le modèle dBc
   for(let i=0;i<freqs.length;i++)for(let j=i+1;j<freqs.length;j++){
+    const off=coupleDbc(freqIEM[i]&&freqIEM[j]);   // IEM↔IEM = combiner/rack ; sinon distance émetteurs
     const prods=[[2*freqs[i]-freqs[j],IM_DBC.im3],[2*freqs[j]-freqs[i],IM_DBC.im3],
                  [3*freqs[i]-2*freqs[j],IM_DBC.im5],[3*freqs[j]-2*freqs[i],IM_DBC.im5]];
     if(rob){ prods.push([4*freqs[i]-3*freqs[j],IM_DBC.im7],[4*freqs[j]-3*freqs[i],IM_DBC.im7]); }
     for(const [im,base] of prods){
       if(!legal(im)||inOcc(im))continue;          // hors bande utile / en TV occupée : sans danger
       const d=nearCar(im); if(d<margin)margin=d; if(d<0.0005)res2++;
-      const lvl=imEffDbc(base,d,HALF); if(lvl>worstDbc) worstDbc=lvl;
+      const lvl=imEffDbc(base,d,HALF,off); if(lvl>worstDbc) worstDbc=lvl;
     }
   }
   const marginKHz=isFinite(margin)?Math.round(margin*1000):null;
