@@ -211,7 +211,7 @@ tr:hover td{background:var(--bg2)}
 
 <!-- TABS -->
 <div class="tabs">
-  <div class="tab on" data-t="table"><i class="ti ti-table"></i> Tableau</div>
+  <div class="tab on" data-t="table"><i class="ti ti-list"></i> Liste</div>
   <div class="tab" data-t="spectrum"><i class="ti ti-wave-sine"></i> Spectre</div>
   <div class="tab adv-only" data-t="advspec"><i class="ti ti-chart-dots"></i> Spectre avancé</div>
   <div class="tab" data-t="plan"><i class="ti ti-wand"></i> Plan auto</div>
@@ -253,6 +253,7 @@ tr:hover td{background:var(--bg2)}
       <div class="leg-i" id="li3"><div class="leg-b" style="background:#854F0B99"></div>IM3 (2 émetteurs)</div>
       <div class="leg-i" id="li3t" style="display:none"><div class="leg-b" style="background:#534AB799"></div>3TX (3 émetteurs)</div>
       <div class="leg-i" id="li5" style="display:none"><div class="leg-b" style="background:#BA751766"></div>IM5</div>
+      <div class="leg-i" id="li7" style="display:none"><div class="leg-b" style="background:#BA751740"></div>IM7 (éducatif)</div>
       <div class="leg-i"><div class="leg-b" style="background:#185FA5;height:2px;align-self:center"></div>Scan mesuré (importé)</div>
       <div class="leg-i" id="liLock" style="display:none"><i class="ti ti-lock" style="font-size:11px"></i>Porteuse verrouillée</div>
     </div>
@@ -428,7 +429,7 @@ tr:hover td{background:var(--bg2)}
 
 <script>
 const MC=['#185FA5','#993556','#3B6D11','#854F0B','#534AB7','#0F6E56','#D85A30','#0C447C'];
-const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{},mode:'std',exclZones:[],spareN:0,useScanBlock:false,scanMargin:8,planDirty:false,iemNoCombiner:false,zoneCoord:{}};
+const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,show7:false,onlyB:true,hideTV:false,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{},mode:'std',exclZones:[],spareN:0,useScanBlock:false,scanMargin:8,planDirty:false,iemNoCombiner:false,zoneCoord:{}};
 const BACKEND='http://localhost:3001';
 
 // Réglages de coordination (onglet Plan auto) : la distance entre émetteurs
@@ -1233,6 +1234,7 @@ function computeIM(){
       push(3,`2f${L(j)}-f${L(i)}`,[i,j],2*b-a);
       push(5,`3f${L(i)}-2f${L(j)}`,[i,j],3*a-2*b);
       push(5,`3f${L(j)}-2f${L(i)}`,[i,j],3*b-2*a);
+      if(S.show7){ push(7,`4f${L(i)}-3f${L(j)}`,[i,j],4*a-3*b); push(7,`4f${L(j)}-3f${L(i)}`,[i,j],4*b-3*a); } // 7e ordre : affichage éducatif uniquement
       for(let k=j+1;k<F.length;k++){
         if(!coexist(M[i],M[k])||!coexist(M[j],M[k])) continue;
         const c=F[k];
@@ -1244,7 +1246,7 @@ function computeIM(){
   }
   S.mics.forEach(m=>{
     const rel=im=>im.src.every(si=>coexist(M[si],m)); // produit pertinent pour ce micro
-    m.imHits=S.im.filter(im=>im.f3==null&&rel(im)&&Math.abs(im.freq-m.freq)<0.15);
+    m.imHits=S.im.filter(im=>im.f3==null&&im.ord!==7&&rel(im)&&Math.abs(im.freq-m.freq)<0.15); // IM7 exclue du statut/score (éducatif)
     m.imHits3=S.im.filter(im=>im.f3!=null&&rel(im)&&Math.abs(im.freq-m.freq)<0.1);
   });
 }
@@ -2029,6 +2031,7 @@ function renderAll(){
   document.getElementById('li3').style.display=S.show3?'flex':'none';
   document.getElementById('li3t').style.display=S.show3T?'flex':'none';
   document.getElementById('li5').style.display=S.show5?'flex':'none';
+  document.getElementById('li7').style.display=S.show7?'flex':'none';
   document.getElementById('liLock').style.display=S.mics.some(m=>m.locked)?'flex':'none';
   syncImBars();
   const gp=document.getElementById('pane-groups');
@@ -2062,13 +2065,14 @@ function renderTable(){
   }
   const FMIN=470,FMAX=840; // inclut les canaux PMSE 65/66 (~822–838 MHz)
   const items=[];
-  S.ch.forEach(c=>{if(c.freq_end<=FMAX) items.push({f:c.freq_start,t:'tv',d:c});});
+  if(!S.hideTV) S.ch.forEach(c=>{if(c.freq_end<=FMAX) items.push({f:c.freq_start,t:'tv',d:c});});
   S.mics.forEach((m,i)=>items.push({f:m.freq,t:'mic',d:m,i}));
   const imShow=S.im.filter(im=>{
     const is3T=im.ord===3&&im.f3!=null;        // 3 émetteurs (fA+fB−fC)
     if(im.ord===3&&im.f3==null&&!S.show3) return false; // IM3 (2 émetteurs)
     if(is3T&&!S.show3T) return false;           // 3TX
     if(im.ord===5&&!S.show5) return false;
+    if(im.ord===7&&!S.show7) return false;      // IM7 (éducatif)
     if(S.onlyB&&(im.freq<470||im.freq>694)) return false;
     return true;
   });
@@ -2098,7 +2102,7 @@ function renderTable(){
       const sb=micStatusBadge(m);
       h+=`<tr class="r-mic">
         <td><span class="dot" style="background:${m.color}"></span><span class="badge bMic">${m.kind==="iem"?"IEM":"Micro"}</span></td>
-        <td style="font-weight:600">${m.name}${m.group?` <span class="badge bGrp" style="font-size:9px;font-weight:500">${m.group}</span>`:''}</td>
+        <td style="font-weight:600"><span style="color:var(--text3);font-weight:500">${it.i+1}.</span> ${m.name}${m.group?` <span class="badge bGrp" style="font-size:9px;font-weight:500">${m.group}</span>`:''}</td>
         <td></td>
         <td style="font-family:monospace;font-weight:600;color:${m.color}">${m.freq} MHz</td>
         <td style="color:var(--text2);font-size:11px">${m.brand?m.brand+' ':''}${m.model||''}${m.band?' '+m.band:''}<br><span style="opacity:.7">${m.fmin}–${m.fmax} MHz · espacement ${m.spacing||m.bw} kHz</span></td>
@@ -2111,9 +2115,9 @@ function renderTable(){
       const mHit=S.mics.find(m=>Math.abs(m.freq-im.freq)<0.15);
       const src=im.f3!=null?`${im.f1?.toFixed(3)}, ${im.f2?.toFixed(3)}, ${im.f3?.toFixed(3)}`:`${im.f1?.toFixed(3)} / ${im.f2?.toFixed(3)}`;
       const is3T=im.ord===3&&im.f3!=null;
-      const rcls=im.ord===5?'r-im5':(is3T?'r-im3t':'r-im3');
-      const bcls=im.ord===5?'bIM5':(is3T?'b3TX':'bIM3');
-      const blab=im.ord===5?'IM5':(is3T?'3TX':'IM3');
+      const rcls=(im.ord===5||im.ord===7)?'r-im5':(is3T?'r-im3t':'r-im3');
+      const bcls=(im.ord===5||im.ord===7)?'bIM5':(is3T?'b3TX':'bIM3');
+      const blab=im.ord===7?'IM7':(im.ord===5?'IM5':(is3T?'3TX':'IM3'));
       h+=`<tr class="${rcls}">
         <td><span class="badge ${bcls}">${blab}</span></td>
         <td style="font-size:11px;color:var(--text2)">${im.type}</td>
@@ -2369,6 +2373,12 @@ function drawSpecOn(cv){
   if(S.show5) S.im.filter(im=>im.ord===5&&imVis(im)&&(!S.onlyB||(im.freq>=FMIN&&im.freq<=FMAX))).forEach(im=>{
     const x=fx(im.freq);if(x<0||x>W)return;
     ctx.strokeStyle='rgba(186,117,23,.5)';ctx.lineWidth=.8;ctx.setLineDash([2,4]);
+    ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,BH);ctx.stroke();ctx.setLineDash([]);
+  });
+  // IM7 : produits 2 émetteurs (4fA−3fB) — très faibles, affichage éducatif, tracé pointillé fin
+  if(S.show7) S.im.filter(im=>im.ord===7&&imVis(im)&&(!S.onlyB||(im.freq>=FMIN&&im.freq<=FMAX))).forEach(im=>{
+    const x=fx(im.freq);if(x<0||x>W)return;
+    ctx.strokeStyle='rgba(186,117,23,.35)';ctx.lineWidth=.6;ctx.setLineDash([1,5]);
     ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,BH);ctx.stroke();ctx.setLineDash([]);
   });
   // 3TX : produits 3 émetteurs (fA+fB−fC) — plus faibles, tracé fin violet
@@ -2642,20 +2652,23 @@ attachSpec('cv'); attachSpec('cvAdv');
 
 // ── Filtres IM (IM3 / 3TX / IM5 / Bande seule) — barre dupliquée dans les
 //    onglets Tableau et Spectre, état partagé dans S, synchronisé entre les deux.
-function imBarHTML(){
+function imBarHTML(forList){
   return '<span class="im-lbl">Afficher :</span>'
     +'<label class="chk" title="Produits du 3e ordre à 2 émetteurs (2fA−fB, 3fA−2fB) — les plus forts"><input type="checkbox" data-flag="show3"'+(S.show3?' checked':'')+'> IM3</label>'
     +'<label class="chk" title="Produits du 3e ordre à 3 émetteurs (fA+fB−fC) — plus faibles, audibles si 3 émetteurs proches émettent ensemble"><input type="checkbox" data-flag="show3T"'+(S.show3T?' checked':'')+'> 3TX</label>'
     +'<label class="chk" title="Produits du 5e ordre à 2 émetteurs (3fA−2fB)"><input type="checkbox" data-flag="show5"'+(S.show5?' checked':'')+'> IM5</label>'
-    +'<label class="chk" title="N\'afficher que ce qui tombe dans la bande TNT 470–694 MHz"><input type="checkbox" data-flag="onlyB"'+(S.onlyB?' checked':'')+'> Bande seule</label>';
+    +'<label class="chk" title="Produits du 7e ordre à 2 émetteurs (4fA−3fB) — très faibles, affichage éducatif (n\'affecte pas le score)"><input type="checkbox" data-flag="show7"'+(S.show7?' checked':'')+'> IM7</label>'
+    +'<label class="chk" title="N\'afficher que ce qui tombe dans la bande TNT 470–694 MHz"><input type="checkbox" data-flag="onlyB"'+(S.onlyB?' checked':'')+'> Bande seule</label>'
+    +(forList?'<span style="width:1px;height:14px;background:var(--border);margin:0 2px"></span><label class="chk" title="Masquer les lignes des canaux TNT pour ne voir que le matériel"><input type="checkbox" data-flag="hideTV"'+(S.hideTV?' checked':'')+'> Masquer TNT</label>':'');
 }
-function initImBars(){['imBarTable','imBarSpec','imBarAdv'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=imBarHTML();});}
+function initImBars(){['imBarSpec','imBarAdv'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=imBarHTML(false);});const t=document.getElementById('imBarTable');if(t)t.innerHTML=imBarHTML(true);}
 function syncImBars(){document.querySelectorAll('input[data-flag]').forEach(x=>{x.checked=!!S[x.dataset.flag];});}
 document.addEventListener('change',e=>{
   const inp=e.target;
   if(!inp.matches||!inp.matches('input[data-flag]'))return;
   S[inp.dataset.flag]=inp.checked;
   syncImBars();
+  if(inp.dataset.flag==='show7') computeIM();   // l'IM7 n'est calculée que si affichée
   renderAll();
 });
 initImBars();
