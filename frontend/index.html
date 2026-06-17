@@ -887,9 +887,12 @@ document.getElementById('impFile').onchange=(ev)=>{
         return;
       }
       S.scan={name:file.name,points,meta,warnings};
+      S.useScanBlock=true;            // le plan auto évite désormais pics et bruit mesurés
+      markPlanDirty();
       renderScanInfo();
       drawSpec();
-      setSt(`✓ Scan « ${file.name} » importé — ${meta.count} points superposés au spectre.`);
+      const thr=scanThreshold();
+      setSt(`✓ Scan « ${file.name} » importé — ${meta.count} points. Le plan auto évitera les pics/bruit${thr!=null?' (seuil '+thr.toFixed(0)+' dBm)':''} : régénérez le plan.`);
     }catch(e){setSt('Erreur lecture scan : '+e.message);}
   };
   rd.onerror=()=>setSt('Impossible de lire le fichier.');
@@ -1263,8 +1266,9 @@ function micReliability(m){
   if(S.scan&&S.scan.points&&S.scan.points.length){
     const d=scanDbAt(m.freq), thr=scanThreshold();
     if(d!=null&&thr!=null){
-      if(d>thr){ s-=2; r.push('Pic / bruit mesuré au scan'); }
-      else if(d>thr-6){ s-=0.5; r.push('Proche du plancher de bruit mesuré'); }
+      const over=d-thr;                          // dB au-dessus du seuil de bruit/pics
+      if(over>0){ s-=Math.min(3,0.5+over/8); r.push('Énergie mesurée au scan (+'+Math.round(over)+' dB)'); }
+      else if(over>-4){ s-=0.5; r.push('Proche du plancher de bruit mesuré'); }
     }
   }
   s=Math.max(0,Math.min(5,s));
@@ -1285,7 +1289,7 @@ function micStars(m){
 // plans valides (ordres + choix de slots tirés au sort, graine reproductible)
 // et on garde celui qui maximise le score de fiabilité (objectif en dBc).
 // Budget inversement proportionnel à la taille du plan.
-function autoTries(){ const n=Math.max(1,S.mics.length); return Math.min(30,Math.max(6,Math.round(300/n))); }
+function autoTries(){ const n=Math.max(1,S.mics.length); return Math.min(5,Math.max(2,Math.round(60/n))); }
 function bestPlan(opts,tries){
   let best=null;
   for(let s=1;s<=tries;s++){
@@ -1307,15 +1311,18 @@ function renderBestPlan(opts){
 function generateAuto(){
   if(!S.ch.length){ document.getElementById('planOut').innerHTML='<span style="color:var(--red)">Lancez d\'abord l\'analyse TNT.</span>'; return; }
   if(!S.mics.length){ document.getElementById('planOut').innerHTML='<span style="color:var(--red)">Ajoutez d\'abord des micros / IEM.</span>'; return; }
-  const tries=autoTries(), modes=[{rob:true},{adv:true},{},{max:true}];
+  // Auto = packing/capacité d'abord. L'IM7 (mode robuste) reste un choix expert
+  // explicite — produits très faibles (~−22 dBc), inutile de brider la capacité avec.
+  // Best-of-N concentré sur le mode standard (packing) ; avancé/max en appoint.
+  const tries=autoTries();
   let best=null;
-  for(const t of modes){
-    const bp=bestPlan(t,tries);
-    if(!best||bp.r.reliab.value>best.bp.r.reliab.value){ best={opts:t,bp}; }
-    if(t.rob&&bp.r.nOK===S.mics.length&&bp.r.reliab.grade==='Excellent') break;  // optimal d'emblée
-  }
+  const consider=(opts,bp)=>{ if(bp&&(!best||bp.r.reliab.value>best.bp.r.reliab.value)) best={opts,bp}; };
+  consider({}, bestPlan({}, tries));                  // packing : best-of-N
+  consider({adv:true}, bestPlan({adv:true}, 1));      // avancé (sans 3TX) : un essai en appoint
+  if(best&&best.bp.r.nKO>0) consider({max:true}, bestPlan({max:true}, 1)); // capacité max seulement si des liaisons restent non placées
+  if(!best){ generatePlan({mics:S.mics}); return; }
   generatePlan({mics:S.mics,...best.opts,shuffle:true,seed:best.bp.seed});        // rejoue exactement le meilleur
-  const lbl=best.opts.rob?'robuste (IM3/5/7+3TX)':(best.opts.adv?'avancé':(best.opts.max?'capacité max':'standard'));
+  const lbl=best.opts.adv?'avancé (sans 3TX)':(best.opts.max?'capacité max':'standard (packing)');
   setSt(`Plan auto optimisé (${tries}× par mode) : mode ${lbl} retenu — ${best.bp.r.nOK}/${S.mics.length} placés · fiabilité ${best.bp.r.reliab.grade}.`);
 }
 document.getElementById('autoGenBtn').onclick=generateAuto;
@@ -1504,29 +1511,30 @@ function generatePlan(opts){
     // les IM dans les canaux TV occupés (sinon dans les canaux sacrifiés).
     const cands=[];
     const step=Math.max(0.005,(m.tuneStep||25)/1000);   // grille d'accord du modèle
-    for(let f=m.fmin; f<=m.fmax+1e-9; f=parseFloat((f+step).toFixed(3))){
+    // pas de balayage = 2× la grille d'accord (50 kHz) : largement assez de slots
+    // (>4000 sur la bande) et la garde IM ≥ 50 kHz le permet — gros gain de vitesse.
+    const sstep=step*(step<0.04?2:1);
+    const nSteps=Math.floor((m.fmax-m.fmin)/sstep+1e-9);
+    for(let k=0;k<=nSteps;k++){
+      const f=Math.round((m.fmin+k*sstep)*1000)/1000;
       if(blocked(f)) continue;
-      if(setF.some(c=>Math.abs(f-c.freq)<Math.max(sp,c.sp))) continue;
-      // la porteuse ne doit pas se poser sur une IM déjà créée
-      if(maskHit(imMask,f)) continue;
-      // IM 2 tons créées par f avec chaque porteuse posée
-      let ok=true,score=0;
+      if(maskHit(imMask,f)) continue;                    // pas sur une IM déjà créée (O(1))
+      // espacement + IM 2 tons créées par f avec chaque porteuse posée (1 passe,
+      // boucle déroulée sans allocation : c'est le point chaud de la génération).
+      let ok=true,score=0,minD=5;
       for(const c of setF){
-        for(const im of pairIM(f,c.freq)){
-          // une IM sur une porteuse (ou sur f) = interdit
-          if(Math.abs(im-f)<GUARD||maskHit(carMask,im)){ok=false;break;}
-          if(inOcc(im)) score+=2;                    // IM en zone TV : idéal
-          else if(legal(im)){
-            const ch=chOf(im);
-            // zone libre : coûteux la 1re fois, presque gratuit ensuite →
-            // les IM se concentrent dans quelques canaux « sacrifiés »
-            score-=(ch!=null&&polluted.has(ch))?0.3:3;
-          }
-        }
-        if(!ok)break;
+        const cf=c.freq, dd=f>cf?f-cf:cf-f;
+        if(dd<(sp>c.sp?sp:c.sp)){ ok=false; break; }     // espacement constructeur
+        if(dd<minD) minD=dd;
+        let im,ad;
+        // IM3 (2fA−fB) puis IM5 (3fA−2fB), dans les deux sens. IM sur porteuse = interdit ;
+        // sinon on note : zone TV occupée = idéal, zone libre propre = coûteux, canal sacrifié = quasi gratuit.
+        im=2*f-cf;  ad=im>f?im-f:f-im; if(ad<GUARD||maskHit(carMask,im)){ok=false;break;} if(inOcc(im))score+=2; else if((im>=470&&im<=694)||(im>=822&&im<=838)){const ch=chOf(im);score-=(ch!=null&&polluted.has(ch))?0.3:3;}
+        im=2*cf-f;  ad=im>f?im-f:f-im; if(ad<GUARD||maskHit(carMask,im)){ok=false;break;} if(inOcc(im))score+=2; else if((im>=470&&im<=694)||(im>=822&&im<=838)){const ch=chOf(im);score-=(ch!=null&&polluted.has(ch))?0.3:3;}
+        im=3*f-2*cf;ad=im>f?im-f:f-im; if(ad<GUARD||maskHit(carMask,im)){ok=false;break;} if(inOcc(im))score+=2; else if((im>=470&&im<=694)||(im>=822&&im<=838)){const ch=chOf(im);score-=(ch!=null&&polluted.has(ch))?0.3:3;}
+        im=3*cf-2*f;ad=im>f?im-f:f-im; if(ad<GUARD||maskHit(carMask,im)){ok=false;break;} if(inOcc(im))score+=2; else if((im>=470&&im<=694)||(im>=822&&im<=838)){const ch=chOf(im);score-=(ch!=null&&polluted.has(ch))?0.3:3;}
       }
       if(!ok) continue;
-      const minD=setF.length?Math.min(...setF.map(c=>Math.abs(f-c.freq))):5;
       // une porteuse posée sur une IM 3 tons existante part avec un malus ;
       // en régénération un bruit aléatoire départage les quasi-équivalents
       cands.push({f,c3:maskHit(im3Mask,f)?1:0,score:score+Math.min(minD,1.5)+(shuffle?rnd()*2:0)});
@@ -1567,13 +1575,19 @@ function generatePlan(opts){
         if(v5<bestV){bestV=v5;best=c.f;}
         if(bestV===0||++clean>=25) break; // assez de candidats propres examinés
       }else{
-        cnt: for(let i=0;i<setF.length&&v<bestV;i++)for(let j=i+1;j<setF.length;j++){
+        // standard (packing) : pénaliser fortement un 3TX qui tombe sur une
+        // porteuse, et concentrer les autres 3TX dans les zones TV occupées /
+        // canaux déjà sacrifiés plutôt que de polluer une zone libre propre.
+        let bad=c.c3*4;
+        s3: for(let i=0;i<setF.length;i++)for(let j=i+1;j<setF.length;j++){
           const a=setF[i].freq,b=setF[j].freq;
-          for(const im of [c.f+a-b,c.f+b-a,a+b-c.f])
-            if(maskHit(carMask,im)||Math.abs(im-c.f)<GUARD3){v++;if(v>=bestV)break cnt;}
+          for(const im of [c.f+a-b,c.f+b-a,a+b-c.f]){
+            if(maskHit(carMask,im)||Math.abs(im-c.f)<GUARD3){ bad+=100; if(bad>=bestV)break s3; }
+            else if(legal(im)&&!inOcc(im)){ const ch=chOf(im); bad+=(ch!=null&&polluted.has(ch))?0.1:1; } // zone libre propre = à éviter
+          }
         }
-        if(v<bestV){bestV=v;best=c.f;}
-        if(bestV===0) break; // candidat 100 % propre (et le mieux noté) trouvé
+        if(bad<bestV){bestV=bad;best=c.f;}
+        if(bestV<1||++clean>=40) break; // 3TX packés (aucun sur porteuse / zone propre) ou assez examiné
       }
     }
     if(best!=null) commit(idx,best,sp);
