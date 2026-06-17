@@ -2102,7 +2102,7 @@ function renderTable(){
       const sb=micStatusBadge(m);
       h+=`<tr class="r-mic">
         <td><span class="dot" style="background:${m.color}"></span><span class="badge bMic">${m.kind==="iem"?"IEM":"Micro"}</span></td>
-        <td style="font-weight:600"><span style="color:var(--text3);font-weight:500">${it.i+1}.</span> ${m.name}${m.group?` <span class="badge bGrp" style="font-size:9px;font-weight:500">${m.group}</span>`:''}</td>
+        <td style="font-weight:600"><span style="color:var(--text3);font-weight:500">${it.i+1}.</span> ${m.name}${(S.mode==='adv'&&m.group)?` <span class="badge bGrp" style="font-size:9px;font-weight:500">${m.group}</span>`:''}</td>
         <td></td>
         <td style="font-family:monospace;font-weight:600;color:${m.color}">${m.freq} MHz</td>
         <td style="color:var(--text2);font-size:11px">${m.brand?m.brand+' ':''}${m.model||''}${m.band?' '+m.band:''}<br><span style="opacity:.7">${m.fmin}–${m.fmax} MHz · espacement ${m.spacing||m.bw} kHz</span></td>
