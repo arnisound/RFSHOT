@@ -224,7 +224,6 @@ tr:hover td{background:var(--bg2)}
   <div class="spec-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px 0">
     <button class="btn btn-xs scan-imp" title="Importer un scan de spectre (CSV) : Shure WWB, Sennheiser WSM, RF Explorer, tinySA…"><i class="ti ti-file-upload"></i> Importer un scan</button>
     <span class="scan-info" style="font-size:11px;color:var(--text2)">Aucun scan importé — formats CSV : Shure WWB, Sennheiser WSM, RF Explorer, tinySA…</span>
-    <button class="btn btn-xs btn-purple scan-fit" style="display:none" title="Recalcule le plan en évitant les pics et le bruit mesurés (les porteuses verrouillées ne bougent pas)."><i class="ti ti-adjustments-check"></i> Caler le plan sur le scan</button>
     <button class="btn btn-xs scan-clear" style="display:none;border-color:var(--red);color:var(--red)"><i class="ti ti-x"></i> Retirer</button>
   </div>
   <div id="imBarTable" class="im-bar" style="padding:14px 16px 4px"></div>
@@ -240,7 +239,7 @@ tr:hover td{background:var(--bg2)}
       <button class="btn btn-xs scan-imp" id="impBtn" title="Importer un scan de spectre (CSV) exporté depuis Shure Wireless Workbench, Sennheiser WSM, RF Explorer, tinySA, etc."><i class="ti ti-file-upload"></i> Importer un scan</button>
       <input type="file" id="impFile" accept=".csv,.txt,text/csv,text/plain" hidden>
       <span id="scanInfo" class="scan-info" style="font-size:11px;color:var(--text2)">Aucun scan importé — formats CSV : Shure WWB, Sennheiser WSM, RF Explorer, tinySA…</span>
-      <button class="btn btn-xs btn-purple scan-fit" id="scanFit" style="display:none" title="Recalcule le plan de fréquences en évitant les pics et le bruit mesurés par le scan (les porteuses verrouillées ne bougent pas)."><i class="ti ti-adjustments-check"></i> Caler le plan sur le scan</button>
+      <button class="btn btn-xs btn-purple scan-gen" title="Génère (ou régénère) un plan optimisé et l'applique — scan et IM pris en compte automatiquement. Les porteuses verrouillées sont conservées."><i class="ti ti-wand"></i> Générer / Régénérer le plan</button>
       <button class="btn btn-xs scan-clear" id="scanClear" style="display:none;border-color:var(--red);color:var(--red)"><i class="ti ti-x"></i> Retirer</button>
     </div>
     <div id="imBarSpec" class="im-bar" style="margin-bottom:8px"></div>
@@ -278,8 +277,7 @@ tr:hover td{background:var(--bg2)}
           <option value="3">Maximale (+3 dB)</option>
         </select>
       </label>
-      <button class="btn btn-xs btn-purple" id="advFit" title="Recalcule le plan en évitant les pics et le bruit mesurés par le scan."><i class="ti ti-adjustments-check"></i> Caler sur le scan</button>
-      <button class="btn btn-xs btn-green" id="advRecalc" title="Recalcule les produits d'intermodulation après placement manuel."><i class="ti ti-refresh"></i> Recalculer les IM</button>
+      <button class="btn btn-xs btn-purple" id="advGen" title="Génère (ou régénère) un plan optimisé sur les liaisons non verrouillées — scan et IM pris en compte automatiquement — puis l'applique. Les porteuses verrouillées sont conservées."><i class="ti ti-wand"></i> Générer / Régénérer le plan</button>
     </div>
     <div id="imBarAdv" class="im-bar" style="margin-bottom:8px"></div>
     <canvas id="cvAdv" height="230" aria-label="Spectre avancé — placement manuel"></canvas>
@@ -405,7 +403,7 @@ tr:hover td{background:var(--bg2)}
     <div class="spec-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
       <button class="btn btn-xs scan-imp" title="Importer un scan de spectre (CSV) : Shure WWB, Sennheiser WSM, RF Explorer, tinySA…"><i class="ti ti-file-upload"></i> Importer un scan</button>
       <span class="scan-info" style="font-size:11px;color:var(--text2)">Aucun scan importé — formats CSV : Shure WWB, Sennheiser WSM, RF Explorer, tinySA…</span>
-      <button class="btn btn-xs btn-purple scan-fit" style="display:none" title="Recalcule le plan en évitant les pics et le bruit mesurés (les porteuses verrouillées ne bougent pas)."><i class="ti ti-adjustments-check"></i> Caler le plan sur le scan</button>
+      <button class="btn btn-xs btn-purple scan-gen" title="Génère (ou régénère) un plan optimisé et l'applique — scan et IM pris en compte automatiquement. Les porteuses verrouillées sont conservées."><i class="ti ti-wand"></i> Générer / Régénérer le plan</button>
       <button class="btn btn-xs scan-clear" style="display:none;border-color:var(--red);color:var(--red)"><i class="ti ti-x"></i> Retirer</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px 10px;margin-bottom:14px;max-width:1100px">
@@ -779,7 +777,7 @@ document.getElementById('scanBtn').onclick=async()=>{
 function renderScanInfo(){
   // Met à jour toutes les barres scan (Tableau, Spectre, Spectre avancé, Plan).
   const infos=document.querySelectorAll('.scan-info');
-  const toggles=document.querySelectorAll('.scan-clear,.scan-fit');
+  const toggles=document.querySelectorAll('.scan-clear');
   if(!S.scan){
     infos.forEach(info=>{ info.style.color='var(--text2)'; info.textContent='Aucun scan importé — formats CSV : Shure WWB, Sennheiser WSM, RF Explorer, tinySA…'; });
     toggles.forEach(b=>b.style.display='none');
@@ -814,10 +812,10 @@ function fitPlanToScan(){
 }
 // Délégation : tous les boutons « Importer / Caler / Retirer » de chaque onglet.
 document.addEventListener('click',e=>{
-  const imp=e.target.closest('.scan-imp'), clr=e.target.closest('.scan-clear'), fit=e.target.closest('.scan-fit');
+  const imp=e.target.closest('.scan-imp'), clr=e.target.closest('.scan-clear'), gen=e.target.closest('.scan-gen');
   if(imp){ document.getElementById('impFile').click(); }
   else if(clr){ S.scan=null; S.useScanBlock=false; renderScanInfo(); drawSpec(); setSt('Scan retiré.'); }
-  else if(fit){ fitPlanToScan(); }
+  else if(gen){ generateApplyPlan(); }
 });
 
 // ── Onglet Spectre avancé : liste des liaisons + placement manuel ─────
@@ -859,8 +857,7 @@ document.getElementById('advSens').onchange=e=>{
   if(S.useScanBlock){ renderScanInfo(); drawSpec(); }
   setSt(`Sensibilité scan : +${S.scanMargin} dB au-dessus du plancher de bruit.`);
 };
-document.getElementById('advFit').onclick=fitPlanToScan;
-document.getElementById('advRecalc').onclick=()=>{ computeIM(); renderAll(); setSt('Produits d\'intermodulation recalculés.'); };
+document.getElementById('advGen').onclick=generateApplyPlan;
 
 // ── Plan « à recalculer » après ajout de matériel ─────────────────────
 function updatePlanDirty(){ const el=document.getElementById('planDirtyBar'); if(el) el.style.display=S.planDirty?'inline-flex':'none'; }
@@ -1321,24 +1318,41 @@ function renderBestPlan(opts){
   generatePlan({mics:S.mics,...opts,shuffle:true,seed:bp.seed});
   return bp;
 }
-// Auto intelligent : essaie du plus sûr au plus permissif, chaque mode optimisé
-// par best-of-N, et retient le meilleur (capacité d'abord, puis fiabilité dBc).
-function generateAuto(){
-  if(!S.ch.length){ document.getElementById('planOut').innerHTML='<span style="color:var(--red)">Lancez d\'abord l\'analyse TNT.</span>'; return; }
-  if(!S.mics.length){ document.getElementById('planOut').innerHTML='<span style="color:var(--red)">Ajoutez d\'abord des micros / IEM.</span>'; return; }
-  // Auto = packing/capacité d'abord. L'IM7 (mode robuste) reste un choix expert
-  // explicite — produits très faibles (~−22 dBc), inutile de brider la capacité avec.
-  // Best-of-N concentré sur le mode standard (packing) ; avancé/max en appoint.
+// Sélection auto : packing/capacité d'abord (best-of-N sur le mode standard),
+// avancé/max en appoint. Retourne {opts,bp} ou null.
+function autoSelect(){
   const tries=autoTries();
   let best=null;
   const consider=(opts,bp)=>{ if(bp&&(!best||bp.r.reliab.value>best.bp.r.reliab.value)) best={opts,bp}; };
   consider({}, bestPlan({}, tries));                  // packing : best-of-N
   consider({adv:true}, bestPlan({adv:true}, 1));      // avancé (sans 3TX) : un essai en appoint
   if(best&&best.bp.r.nKO>0) consider({max:true}, bestPlan({max:true}, 1)); // capacité max seulement si des liaisons restent non placées
+  return best;
+}
+// Auto intelligent (onglet Plan auto) : sélectionne et AFFICHE le meilleur plan.
+function generateAuto(){
+  if(!S.ch.length){ document.getElementById('planOut').innerHTML='<span style="color:var(--red)">Lancez d\'abord l\'analyse TNT.</span>'; return; }
+  if(!S.mics.length){ document.getElementById('planOut').innerHTML='<span style="color:var(--red)">Ajoutez d\'abord des micros / IEM.</span>'; return; }
+  const best=autoSelect();
   if(!best){ generatePlan({mics:S.mics}); return; }
   generatePlan({mics:S.mics,...best.opts,shuffle:true,seed:best.bp.seed});        // rejoue exactement le meilleur
   const lbl=best.opts.adv?'avancé (sans 3TX)':(best.opts.max?'capacité max':'standard (packing)');
-  setSt(`Plan auto optimisé (${tries}× par mode) : mode ${lbl} retenu — ${best.bp.r.nOK}/${S.mics.length} placés · fiabilité ${best.bp.r.reliab.grade}.`);
+  setSt(`Plan auto optimisé : mode ${lbl} retenu — ${best.bp.r.nOK}/${S.mics.length} placés · fiabilité ${best.bp.r.reliab.grade}.`);
+}
+// Génère un plan optimisé et l'APPLIQUE directement aux micros (boutons Spectre /
+// Spectre avancé). Respecte les verrous, gère le multi-zones, recalcule les IM.
+function generateApplyPlan(){
+  if(!S.ch.length){ setSt('Lancez d\'abord l\'analyse TNT (onglet Tableau).'); return; }
+  if(!S.mics.length){ setSt('Ajoutez d\'abord des micros / IEM.'); return; }
+  const multiZone=S.mode==='adv'&&new Set(S.mics.map(m=>micCoord(m)==='global'?'G':zoneKeyOfMic(m))).size>1;
+  if(multiZone){ generateGroupPlans(); clearPlanDirty(); return; }
+  const best=autoSelect();
+  if(!best){ setSt('Génération impossible.'); return; }
+  const r=generatePlan({mics:S.mics,render:false,...best.opts,shuffle:true,seed:best.bp.seed});
+  S.mics.forEach((m,i)=>{ if(r.placed[i]!=null) m.freq=r.placed[i]; });
+  computeIM(); renderAll(); clearPlanDirty();
+  const lbl=best.opts.adv?'avancé':(best.opts.max?'capacité max':'standard');
+  setSt(`Plan régénéré et appliqué — ${r.nOK}/${S.mics.length} placés · mode ${lbl} · fiabilité ${r.reliab.grade}.`);
 }
 document.getElementById('autoGenBtn').onclick=generateAuto;
 document.getElementById('genBtn').onclick=()=>renderBestPlan({adv:false});
