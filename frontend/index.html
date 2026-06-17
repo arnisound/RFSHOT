@@ -508,7 +508,6 @@ function parseScan(text,opts={}){
   if(points.length<10)warnings.push(`Scan très court (${points.length} points).`);
   if(dbMax>30)warnings.push("Amplitudes positives élevées : niveaux en dBµV plutôt qu'en dBm ?");
   if(fmin<1||fmax>6000)warnings.push(`Fréquences hors plage attendue (${fmin.toFixed(1)}–${fmax.toFixed(1)} MHz).`);
-  if(confidence<0.5)warnings.push('Format ambigu : vérifiez le résultat.');
   return{points,meta:{delimiter:fmt.delim,decimal:fmt.decimal,unit,swapped,rows:lines.length,used:points.length,skipped,fmin,fmax,dbMin,dbMax,count:points.length,confidence},warnings};
 }
 
@@ -1196,8 +1195,9 @@ function imEffDbc(base,d,half){return base+txDistDbc()-(d<=half?0:(d-half)*IM_RE
 // pire agresseur (dBc) atteignant la porteuse du micro m (−200 = aucun produit proche)
 function micAggressorDbc(m){
   if(!isFinite(m.freq)||!S.im) return -200;
-  const half=(m.bw||200)/2000, win=half+0.15; let worst=-200;
+  const half=(m.bw||200)/2000, win=half+0.05; let worst=-200;
   for(const im of S.im){
+    if(im.f3!=null) continue;                                  // 2 tons seulement (agresseurs forts)
     if(!im.src.every(si=>S.mics[si]&&coexist(S.mics[si],m))) continue;
     const d=Math.abs(im.freq-m.freq); if(d>win) continue;
     const lvl=imEffDbc(imBaseDbc(im),d,half); if(lvl>worst) worst=lvl;
@@ -1255,14 +1255,20 @@ function micStatusBadge(m){
 //    (porteuse 100 % sûre). Combine conflit TNT, IM 2 tons, 3TX et scan.
 function micReliability(m){
   if(!isFinite(m.freq)) return {stars:0,dbc:null,reasons:['Aucune fréquence assignée']};
-  let s=5; const r=[];
+  let s=5; const r=[]; const half=(m.bw||200)/2000;
   if(m.tntConflict){ s-=3.5; r.push('Canal TNT occupé'); }
-  const dbc=micAggressorDbc(m);    // niveau du produit IM le plus fort atteignant la porteuse
-  if(dbc>-180){
-    // marge en dBc → pénalité étoiles : ≈ −48 dBc (inoffensif) → 0 ; 0 dBc (en bande) → −4,5
-    const pen=Math.max(0,Math.min(4.5,(dbc+48)/11));
-    if(pen>=0.25){ s-=pen; r.push('IM la plus forte ≈ '+Math.round(dbc)+' dBc'); }
+  // IM 2 tons RÉELLEMENT dans la bande du récepteur (cohérent avec le statut) :
+  // agresseurs forts, notées par niveau dBc estimé.
+  let worst2=-200;
+  (m.imHits||[]).forEach(im=>{ const lvl=imEffDbc(imBaseDbc(im),Math.abs(im.freq-m.freq),half); if(lvl>worst2) worst2=lvl; });
+  if(worst2>-180){
+    const pen=Math.max(0,Math.min(4.5,(worst2+45)/10));   // ≈ −45 dBc → 0 ; 0 dBc → −4,5
+    if(pen>=0.25){ s-=pen; r.push('IM 2 tons ≈ '+Math.round(worst2)+' dBc dans la bande'); }
   }
+  // 3TX dans la bande : pénalité légère — nécessite 3 émetteurs proches émettant
+  // simultanément, donc situationnel (0,6 étoile/produit, plafonné).
+  const n3=(m.imHits3||[]).length;
+  if(n3){ s-=Math.min(2,0.6*n3); r.push(n3+' produit(s) 3 émetteurs (3TX) dans la bande'); }
   if(S.scan&&S.scan.points&&S.scan.points.length){
     const d=scanDbAt(m.freq), thr=scanThreshold();
     if(d!=null&&thr!=null){
@@ -1272,7 +1278,7 @@ function micReliability(m){
     }
   }
   s=Math.max(0,Math.min(5,s));
-  return {stars:Math.round(s*2)/2, dbc:dbc>-180?Math.round(dbc):null, reasons:r};
+  return {stars:Math.round(s*2)/2, dbc:worst2>-180?Math.round(worst2):null, reasons:r};
 }
 function micStars(m){
   const {stars,reasons}=micReliability(m);
