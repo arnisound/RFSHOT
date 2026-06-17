@@ -428,7 +428,7 @@ tr:hover td{background:var(--bg2)}
 
 <script>
 const MC=['#185FA5','#993556','#3B6D11','#854F0B','#534AB7','#0F6E56','#D85A30','#0C447C'];
-const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{},mode:'std',exclZones:[],spareN:0,useScanBlock:false,scanMargin:8,planDirty:false,iemNoCombiner:false};
+const S={lat:43.9493,lon:4.8055,ch:[],mics:[],im:[],show3:true,show3T:false,show5:false,onlyB:true,_fmin:470,_fmax:694,_bw:200,planSlots:[],scan:null,groups:['Groupe 1'],groupZones:{},curGroup:'Groupe 1',hiddenGroups:{},txDist:'near',guardMode:'auto',reservedGlobal:[],groupColors:{},mode:'std',exclZones:[],spareN:0,useScanBlock:false,scanMargin:8,planDirty:false,iemNoCombiner:false,zoneCoord:{}};
 const BACKEND='http://localhost:3001';
 
 // Réglages de coordination (onglet Plan auto) : la distance entre émetteurs
@@ -437,11 +437,14 @@ const BACKEND='http://localhost:3001';
 // partout (génération + ajout de micros). Déclaré tôt : utilisé au chargement.
 const DIST_GUARD={tight:0.22,near:0.15,far:0.07};      // serrés / ~2 m / éloignés
 const GUARD_MODE={tight:0.08,normal:0.15,large:0.22};  // surcharge manuelle
-function imGuardMHz(){
-  const gm=S.guardMode||'auto';
-  if(gm!=='auto'&&GUARD_MODE[gm]!=null) return GUARD_MODE[gm];
-  return DIST_GUARD[S.txDist||'near'];
-}
+// Paramètres de coordination : global (réglages de l'onglet Plan auto) ou surcharge
+// par zone (S.zoneCoord[zoneKey]). coordForZone/coordForMic résolvent l'effectif.
+function globalCoord(){ return {txDist:S.txDist||'near', guardMode:S.guardMode||'auto', iemNoCombiner:!!S.iemNoCombiner}; }
+function coordForZone(zk){ const o=(S.zoneCoord||{})[zk]; if(!o) return globalCoord(); const g=globalCoord();
+  return {txDist:o.txDist||g.txDist, guardMode:o.guardMode||g.guardMode, iemNoCombiner:o.iemNoCombiner!=null?!!o.iemNoCombiner:g.iemNoCombiner}; }
+function coordForMic(m){ if(S.mode!=='adv'||!S.zoneCoord) return globalCoord(); const z=micCoord(m); return coordForZone(z==='global'?'global':zoneKeyOfMic(m)); }
+function guardMHzOf(c){ const gm=c.guardMode||'auto'; if(gm!=='auto'&&GUARD_MODE[gm]!=null) return GUARD_MODE[gm]; return DIST_GUARD[c.txDist||'near']; }
+function imGuardMHz(){ return guardMHzOf(globalCoord()); }
 // Fréquences réservées « Global » (intercom, HF invités…) évitées par tous les plans.
 function globalReserved(){ return (S.reservedGlobal||[]).filter(f=>isFinite(f)).map(f=>({freq:f,sp:0.2})); }
 // Zones d'exclusion manuelles (MHz) : plages à éviter partout, en plus du scan TNT
@@ -1190,11 +1193,12 @@ const TXDIST_DBC={tight:6,near:0,far:-10};           // couplage selon distance 
 const IEM_COMBINER_DBC=-15;                          // IEM↔IEM via combiner : intermod fortement réduite (isolation des ports)
 const IEM_RACK_DBC=6;                                // IEM↔IEM en rack SANS combiner : antennes collées = pire cas
 const IM_RES_SLOPE=400;                              // réjection FI du récepteur hors bande (dB/MHz)
-function txDistDbc(){return TXDIST_DBC[S.txDist||'near']||0;}
+function txDistDbcOf(c){return TXDIST_DBC[c.txDist||'near']||0;}
+function txDistDbc(){return txDistDbcOf(globalCoord());}
 function imBaseDbc(im){return im.f3!=null?(im.ord===3?IM_DBC.tx3:IM_DBC.tx5):(im.ord===3?IM_DBC.im3:IM_DBC.im5);}
-// couplage (dBc) du produit selon ses sources : IEM↔IEM = combiner (ou rack si « sans
-// combiner ») ; sinon selon la distance émetteurs. srcKinds : tableau de booléens « est IEM ».
-function coupleDbc(allIEM){ return allIEM ? (S.iemNoCombiner?IEM_RACK_DBC:IEM_COMBINER_DBC) : txDistDbc(); }
+// couplage (dBc) du produit selon ses sources et la coordination de la zone :
+// IEM↔IEM = combiner (ou rack si « sans combiner ») ; sinon selon la distance émetteurs.
+function coupleDbcOf(c,allIEM){ return allIEM ? (c.iemNoCombiner?IEM_RACK_DBC:IEM_COMBINER_DBC) : txDistDbcOf(c); }
 // niveau effectif d'un produit (base dBc) à l'écart d (MHz) d'une porteuse de demi-bande half
 function imEffDbc(base,d,half,off){return base+(off==null?txDistDbc():off)-(d<=half?0:(d-half)*IM_RES_SLOPE);}
 // pire agresseur (dBc) atteignant la porteuse du micro m (−200 = aucun produit proche)
@@ -1265,8 +1269,9 @@ function micReliability(m){
   // IM 2 tons RÉELLEMENT dans la bande du récepteur (cohérent avec le statut) :
   // agresseurs forts, notées par niveau dBc estimé.
   let worst2=-200;
+  const coord=coordForMic(m);
   const allIEM=im=>im.src&&im.src.length&&im.src.every(si=>S.mics[si]&&S.mics[si].kind==='iem');
-  (m.imHits||[]).forEach(im=>{ const lvl=imEffDbc(imBaseDbc(im),Math.abs(im.freq-m.freq),half,coupleDbc(allIEM(im))); if(lvl>worst2) worst2=lvl; });
+  (m.imHits||[]).forEach(im=>{ const lvl=imEffDbc(imBaseDbc(im),Math.abs(im.freq-m.freq),half,coupleDbcOf(coord,allIEM(im))); if(lvl>worst2) worst2=lvl; });
   if(worst2>-180){
     const pen=Math.max(0,Math.min(4.5,(worst2+45)/10));   // ≈ −45 dBc → 0 ; 0 dBc → −4,5
     if(pen>=0.25){ s-=pen; r.push('IM 2 tons ≈ '+Math.round(worst2)+' dBc dans la bande'); }
@@ -1487,7 +1492,8 @@ function generatePlan(opts){
 
   // garde entre une IM et une porteuse (MHz). Mode capacité max = très resserré ;
   // sinon suit le réglage Distance/Garde de l'onglet Plan auto.
-  const GUARD=max?0.05:imGuardMHz();
+  const coord=opts.coord||globalCoord();        // coordination effective (globale ou surcharge de zone)
+  const GUARD=max?0.05:guardMHzOf(coord);
 
   // micros les plus contraints d'abord (plage étroite, spacing large) ;
   // en régénération, l'ordre des ex æquo est tiré au hasard (graine reproductible)
@@ -1664,7 +1670,7 @@ function generatePlan(opts){
   let margin=Infinity,res2=0,worstDbc=-200;
   const HALF=0.075; // demi-bande récepteur typique (≈150 kHz) pour le modèle dBc
   for(let i=0;i<freqs.length;i++)for(let j=i+1;j<freqs.length;j++){
-    const off=coupleDbc(freqIEM[i]&&freqIEM[j]);   // IEM↔IEM = combiner/rack ; sinon distance émetteurs
+    const off=coupleDbcOf(coord,freqIEM[i]&&freqIEM[j]);   // IEM↔IEM = combiner/rack ; sinon distance émetteurs
     const prods=[[2*freqs[i]-freqs[j],IM_DBC.im3],[2*freqs[j]-freqs[i],IM_DBC.im3],
                  [3*freqs[i]-2*freqs[j],IM_DBC.im5],[3*freqs[j]-2*freqs[i],IM_DBC.im5]];
     if(rob){ prods.push([4*freqs[i]-3*freqs[j],IM_DBC.im7],[4*freqs[j]-3*freqs[i],IM_DBC.im7]); }
@@ -1798,6 +1804,38 @@ function moveGroup(g,dir){ ensureGroups(); const i=S.groups.indexOf(g),j=i+dir; 
 function setGroupColor(g,c){ if(c)S.groupColors[g]=c; else delete S.groupColors[g]; renderGroups();renderGroupChips();drawSpec(); }
 const grpColor=g=>S.groupColors[g]||null;
 
+// Zones de coordination actives (clés) → libellé, déduites de l'affectation des groupes.
+function activeZoneKeys(){
+  const m=new Map();
+  S.groups.forEach(g=>{ const z=S.groupZones[g]||'global';
+    if(z==='global') m.set('global','Global (réservé partout)');
+    else if(z==='indep') m.set('G:'+g, g+' (indépendant)');
+    else m.set('E:'+z, 'Ensemble '+z); });
+  if(!m.size) m.set('global','Global (réservé partout)');
+  return m;
+}
+// Panneau « Coordination par zone » : surcharge optionnelle de Distance / Garde /
+// IEM-combiner par zone (sinon réglages globaux du Plan auto).
+function zoneCoordPanel(){
+  const zk=activeZoneKeys();
+  const dist=[['tight','Serrés'],['near','Proches'],['far','Éloignés']];
+  const guard=[['auto','Auto'],['tight','80 kHz'],['normal','150 kHz'],['large','220 kHz']];
+  let s=`<div style="margin-bottom:14px;border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+    <div style="font-size:12px;font-weight:600;margin-bottom:6px">Coordination par zone <span style="font-weight:400;color:var(--text2);font-size:11px">— par défaut chaque zone suit les réglages globaux (onglet Plan auto). Cochez « réglages propres » pour surcharger une zone.</span></div>`;
+  zk.forEach((label,key)=>{
+    const o=(S.zoneCoord||{})[key];
+    s+=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:4px 0;font-size:11px;color:var(--text2)">
+      <b style="min-width:170px;color:var(--text)">${label}</b>
+      <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" data-zc-on="${key}"${o?' checked':''}> réglages propres</label>`;
+    if(o){
+      s+=`<label style="display:flex;align-items:center;gap:4px">Distance <select data-zc-dist="${key}">${dist.map(([v,l])=>`<option value="${v}"${o.txDist===v?' selected':''}>${l}</option>`).join('')}</select></label>
+      <label style="display:flex;align-items:center;gap:4px">Garde IM <select data-zc-guard="${key}">${guard.map(([v,l])=>`<option value="${v}"${o.guardMode===v?' selected':''}>${l}</option>`).join('')}</select></label>
+      <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" data-zc-iem="${key}"${o.iemNoCombiner?' checked':''}> IEM sans combiner</label>`;
+    }
+    s+=`</div>`;
+  });
+  return s+`</div>`;
+}
 function renderGroups(){
   const w=document.getElementById('grpWrap'); if(!w) return;
   ensureGroups(); renderReserved();
@@ -1806,7 +1844,9 @@ function renderGroups(){
   let h=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
     <button class="btn btn-xs" id="grpNewBtn"><i class="ti ti-plus"></i> Nouveau groupe</button>
     <span style="font-size:11px;color:var(--text2)">Les micros s'ajoutent au groupe choisi dans les barres « + Micro / + IEM » (actuel : <b>${S.curGroup}</b>). Déplacez un micro avec le menu à droite de son nom.</span>
-  </div><div class="grp-cards">`;
+  </div>`;
+  h+=zoneCoordPanel();
+  h+=`<div class="grp-cards">`;
   S.groups.forEach((g,gIx)=>{
     const micsG=S.mics.filter(m=>(m.group||'Groupe 1')===g);
     const z=S.groupZones[g]||'global', ge=g.replace(/"/g,'&quot;'), col=grpColor(g);
@@ -1850,6 +1890,11 @@ function wireGroups(){
   document.querySelectorAll('[data-grp-col]').forEach(c=>c.oninput=()=>setGroupColor(c.dataset.grpCol,c.value));
   document.querySelectorAll('[data-grp-up]').forEach(b=>b.onclick=()=>moveGroup(b.dataset.grpUp,-1));
   document.querySelectorAll('[data-grp-down]').forEach(b=>b.onclick=()=>moveGroup(b.dataset.grpDown,1));
+  // coordination par zone (surcharge globale)
+  document.querySelectorAll('[data-zc-on]').forEach(c=>c.onchange=()=>{ const k=c.dataset.zcOn; if(c.checked)S.zoneCoord[k]=globalCoord(); else delete S.zoneCoord[k]; renderGroups(); renderAll(); });
+  document.querySelectorAll('[data-zc-dist]').forEach(s=>s.onchange=()=>{ const k=s.dataset.zcDist; (S.zoneCoord[k]=S.zoneCoord[k]||globalCoord()).txDist=s.value; renderAll(); });
+  document.querySelectorAll('[data-zc-guard]').forEach(s=>s.onchange=()=>{ const k=s.dataset.zcGuard; (S.zoneCoord[k]=S.zoneCoord[k]||globalCoord()).guardMode=s.value; renderAll(); });
+  document.querySelectorAll('[data-zc-iem]').forEach(c=>c.onchange=()=>{ const k=c.dataset.zcIem; (S.zoneCoord[k]=S.zoneCoord[k]||globalCoord()).iemNoCombiner=c.checked; renderAll(); });
 }
 // ── Fréquences réservées partout (Global) ─────────────────────────────
 function renderReserved(){
@@ -1888,7 +1933,8 @@ function generateZoneForGroup(g){
   // tout le monde si on régénère la zone Global)
   const fixed=S.mics.map((m,i)=>i).filter(i=>!inZone.has(i)&&isFinite(S.mics[i].freq)&&idxs.some(j=>coexist(S.mics[i],S.mics[j]))).map(i=>micSp(S.mics[i]));
   const sub=idxs.map(i=>S.mics[i]);
-  const r=generatePlan({mics:sub,render:false,fixed,adv:!!S.planAdv,rob:!!S.planRob,max:!!S.planMax});
+  const zoneK=(S.groupZones[g]||'global')==='global'?'global':zoneKeyOfMic({group:g});
+  const r=generatePlan({mics:sub,render:false,fixed,adv:!!S.planAdv,rob:!!S.planRob,max:!!S.planMax,coord:coordForZone(zoneK)});
   let n=0; idxs.forEach((gi,k)=>{ if(r.placed[k]!=null){ S.mics[gi].freq=r.placed[k]; n++; } });
   computeIM(); renderAll(); renderGroups();
   setSt(`Zone « ${ZONE_LABEL(S.groupZones[g]||'global')} » régénérée — ${n}/${idxs.length} fréquence(s). Les autres groupes n'ont pas bougé.`);
@@ -1905,7 +1951,7 @@ function generateGroupPlans(){
   // 1) Global : coordonnés entre eux
   const gIdx=S.mics.map((m,i)=>i).filter(i=>micCoord(S.mics[i])==='global');
   if(gIdx.length){
-    const r=generatePlan({mics:gIdx.map(i=>S.mics[i]),render:false,adv:mode.adv,rob:mode.rob,max:mode.max});
+    const r=generatePlan({mics:gIdx.map(i=>S.mics[i]),render:false,adv:mode.adv,rob:mode.rob,max:mode.max,coord:coordForZone('global')});
     gIdx.forEach((gi,k)=>{ if(r.placed[k]!=null){ S.mics[gi].freq=r.placed[k]; okT++; } });
     report.push({label:'Global (réservé partout)',idxs:gIdx,r,accent:'var(--amber)'});
   }
@@ -1914,7 +1960,7 @@ function generateGroupPlans(){
   const zmap={}; S.mics.forEach((m,i)=>{ if(micCoord(m)==='global') return; (zmap[zoneKeyOfMic(m)]=zmap[zoneKeyOfMic(m)]||[]).push(i); });
   Object.keys(zmap).forEach(z=>{
     const idxs=zmap[z];
-    const r=generatePlan({mics:idxs.map(i=>S.mics[i]),render:false,fixed:gFixed,adv:mode.adv,rob:mode.rob,max:mode.max});
+    const r=generatePlan({mics:idxs.map(i=>S.mics[i]),render:false,fixed:gFixed,adv:mode.adv,rob:mode.rob,max:mode.max,coord:coordForZone(z)});
     idxs.forEach((gi,k)=>{ if(r.placed[k]!=null){ S.mics[gi].freq=r.placed[k]; okT++; } });
     const grps=groupsOf(idxs);
     const label=z.startsWith('E:')?('Ensemble '+z.slice(2)+' · '+grps.join(', ')):(grps[0]+' (indépendant)');
