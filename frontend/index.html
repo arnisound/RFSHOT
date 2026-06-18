@@ -1181,7 +1181,7 @@ function addUnits(band,sp,count,model,brand,kind,err){
     let freq=autoAssign(fmin,fmax,sp,S.curGroup);
     if(!freq){ freq=parseFloat(Math.min(fmax-0.05,fmin+0.2+(added*(sp/1000))).toFixed(3)); fallback++; }
     const tntC=S.ch.find(c=>c.occupied&&freq>=c.freq_start&&freq<c.freq_end);
-    S.mics.push({id:Date.now()+i,name:count>1?base+' '+(added+1):base,brand,model,band:band[0]||'',kind,freq,fmin,fmax,bw,spacing:sp,tuneStep:25,tntConflict:!!tntC,group:S.curGroup||'Groupe 1',color:MC[S.mics.length%MC.length],imHits:[]});
+    S.mics.push({id:Date.now()+i,name:count>1?base+' '+(added+1):base,porteur:'',brand,model,band:band[0]||'',kind,freq,fmin,fmax,bw,spacing:sp,tuneStep:25,tntConflict:!!tntC,group:S.curGroup||'Groupe 1',color:MC[S.mics.length%MC.length],imHits:[]});
     computeIM(); added++;
   }
   err.style.display='none';
@@ -1464,7 +1464,8 @@ function exportReport(){
   const tnt=S.mics.filter(m=>m.tntConflict).length;
   const spares=S.ch.length?sparesFor(S.mics.map((m,i)=>i),4):[];
   const stat=m=>m.tntConflict?'⚠ TNT':(m.imHits&&m.imHits.length?'IM×'+m.imHits.length:(m.imHits3&&m.imHits3.length?'3TX·'+m.imHits3.length:'OK'));
-  const rows=S.mics.map((m,i)=>`<tr><td>${i+1}</td><td>${esc(m.name)}</td><td>${esc(m.group||'')}</td><td>${m.kind==='iem'?'IEM':'Micro'}</td><td>${esc((m.brand||'')+' '+(m.model||''))}</td><td class="f">${isFinite(m.freq)?m.freq.toFixed(3):'—'}${m.locked?' 🔒':''}</td><td>${m.fmin}–${m.fmax}</td><td>${stat(m)}</td></tr>`).join('');
+  const chanOf=m=>{ if(!isFinite(m.freq))return''; const c=S.ch.find(c=>m.freq>=c.freq_start&&m.freq<c.freq_end); return c?('C'+c.ch):''; };
+  const rows=S.mics.map((m,i)=>`<tr><td>${i+1}</td><td>${esc(m.porteur||'—')}</td><td>${esc(m.name)}</td><td>${m.kind==='iem'?'IEM':'Micro'}</td><td>${esc((m.brand||'')+' '+(m.model||''))}</td><td class="f">${isFinite(m.freq)?m.freq.toFixed(3):'—'}${m.locked?' 🔒':''}</td><td>${chanOf(m)}</td><td>${m.fmin}–${m.fmax}</td><td>${stat(m)}</td></tr>`).join('');
   const ok=conf2===0&&conf3===0&&tnt===0;
   const html=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Plan de fréquences HF — ${esc(date)}</title>
   <style>body{font:13px/1.5 system-ui,sans-serif;color:#111;margin:24px;max-width:900px}
@@ -1482,8 +1483,8 @@ function exportReport(){
     <span class="b ${ok?'ok':'warn'}">${ok?'✓ Plan sans conflit détecté':'⚠ '+(conf2+conf3+tnt)+' conflit(s) à revoir'}</span>
     <span class="b">${conf2} IM 2 tons</span><span class="b">${conf3} 3TX</span><span class="b">${tnt} sur canal TNT</span>
   </div>
-  <h2>Plan de fréquences</h2>
-  <table><thead><tr><th>#</th><th>Liaison</th><th>Groupe</th><th>Type</th><th>Matériel</th><th>Fréquence (MHz)</th><th>Plage</th><th>Statut</th></tr></thead><tbody>${rows}</tbody></table>
+  <h2>Feuille de scène</h2>
+  <table><thead><tr><th>#</th><th>Porteur</th><th>Liaison</th><th>Type</th><th>Matériel</th><th>Fréquence (MHz)</th><th>Canal</th><th>Plage</th><th>Statut</th></tr></thead><tbody>${rows}</tbody></table>
   <h2>Fréquences de secours (coordonnées)</h2>
   <div>${spares.length?spares.map(f=>f.toFixed(3)+' MHz').join(' · '):'—'}</div>
   <h2>Méthode</h2>
@@ -2116,7 +2117,7 @@ refreshGroupSelectors(); renderReserved(); renderExcl();
 // coordination…) sans instrumenter chaque fonction.
 let HIST=[],HPTR=-1,histLock=false,histSig=null;const HMAX=60;
 function histDoc(){return JSON.stringify({
-  m:S.mics.map(m=>[m.id,m.name,m.freq,!!m.locked,m.group,m.fmin,m.fmax,m.spacing,m.kind,m.brand,m.model,m.band,m.tuneStep,m.color,!!m.tntConflict]),
+  m:S.mics.map(m=>[m.id,m.name,m.porteur,m.freq,!!m.locked,m.group,m.fmin,m.fmax,m.spacing,m.kind,m.brand,m.model,m.band,m.tuneStep,m.color,!!m.tntConflict]),
   g:S.groups,gz:S.groupZones,zc:S.zoneCoord,rg:S.reservedGlobal,ez:S.exclZones,gc:S.groupColors,
   cg:S.curGroup,sc:S.scan?(S.scan.name+'#'+(S.scan.points?S.scan.points.length:0)):null,sb:!!S.useScanBlock,
   sp:S.spareN,td:S.txDist,gm:S.guardMode,ic:!!S.iemNoCombiner,meta:S.meta });}
@@ -2252,7 +2253,7 @@ function renderTable(){
       const sb=micStatusBadge(m);
       h+=`<tr class="r-mic">
         <td><span class="dot" style="background:${m.color}"></span><span class="badge bMic">${m.kind==="iem"?"IEM":"Micro"}</span></td>
-        <td style="font-weight:600"><span style="color:var(--text3);font-weight:500">${it.i+1}.</span> ${m.name}${(S.mode==='adv'&&m.group)?` <span class="badge bGrp" style="font-size:9px;font-weight:500">${m.group}</span>`:''}</td>
+        <td style="font-weight:600"><span style="color:var(--text3);font-weight:500">${it.i+1}.</span> ${m.name}${m.porteur?` <span style="color:var(--text2);font-weight:400">· ${m.porteur}</span>`:''}${(S.mode==='adv'&&m.group)?` <span class="badge bGrp" style="font-size:9px;font-weight:500">${m.group}</span>`:''}</td>
         <td></td>
         <td style="font-family:monospace;font-weight:600;color:${m.color}">${m.freq} MHz</td>
         <td style="color:var(--text2);font-size:11px">${m.brand?m.brand+' ':''}${m.model||''}${m.band?' '+m.band:''}<br><span style="opacity:.7">${m.fmin}–${m.fmax} MHz · espacement ${m.spacing||m.bw} kHz</span></td>
@@ -2835,13 +2836,19 @@ function renderFreqPlan(){
   const showGrp=S.mode==='adv';   // colonne Groupe réservée au mode avancé (cachée pour les débutants)
   let h=`<datalist id="fpGrpNames">${grpNames.map(g=>`<option value="${g.replace(/"/g,'&quot;')}">`).join('')}</datalist>
   <table><thead><tr>
-    <th>#</th><th>Nom</th>${showGrp?'<th>Groupe</th>':''}<th>Matériel</th><th>Fréquence (MHz)</th><th>Plage</th><th>Statut</th><th title="Score de fiabilité : 0 = interférences/bruit, 5 = porteuse sûre">Fiabilité</th><th style="width:70px">Verrou</th><th style="width:28px"></th>
+    <th style="width:54px">Ordre</th><th>Nom</th><th title="Personne / rôle qui porte la liaison (ex. « Jean – voix lead »)">Porteur</th>${showGrp?'<th>Groupe</th>':''}<th>Matériel</th><th>Fréquence (MHz)</th><th>Plage</th><th>Statut</th><th title="Score de fiabilité : 0 = interférences/bruit, 5 = porteuse sûre">Fiabilité</th><th style="width:60px">Verrou</th><th style="width:28px"></th>
   </tr></thead><tbody>`;
   S.mics.forEach((m,i)=>{
     const st=micStatusBadge(m);
     h+=`<tr class="${m.locked?'r-lock':''}">
-      <td><span class="dot" style="background:${m.color}"></span>${i+1}</td>
-      <td><input type="text" value="${(m.name||'').replace(/"/g,'&quot;')}" data-fp="name" data-i="${i}" style="width:140px"></td>
+      <td style="white-space:nowrap">
+        <input type="color" value="${m.color}" data-fp="color" data-i="${i}" title="Couleur de la liaison" style="width:18px;height:18px;padding:0;border:none;background:none;cursor:pointer;vertical-align:middle">
+        <span style="color:var(--text2);font-size:11px">${i+1}</span>
+        <button class="btn btn-xs" data-fp-move="up" data-i="${i}" title="Monter" style="padding:1px 4px"${i===0?' disabled':''}><i class="ti ti-chevron-up"></i></button>
+        <button class="btn btn-xs" data-fp-move="down" data-i="${i}" title="Descendre" style="padding:1px 4px"${i===S.mics.length-1?' disabled':''}><i class="ti ti-chevron-down"></i></button>
+      </td>
+      <td><input type="text" value="${(m.name||'').replace(/"/g,'&quot;')}" data-fp="name" data-i="${i}" style="width:130px"></td>
+      <td><input type="text" value="${(m.porteur||'').replace(/"/g,'&quot;')}" data-fp="porteur" data-i="${i}" placeholder="ex. Jean – voix lead" style="width:150px"></td>
       ${showGrp?`<td><input type="text" value="${(m.group||'').replace(/"/g,'&quot;')}" list="fpGrpNames" data-fp="group" data-i="${i}" style="width:110px" title="Groupe (scène, zone…) — gérez la coordination dans l'onglet Groupes"></td>`:''}
       <td style="font-size:11px;color:var(--text2)">${m.brand?m.brand+' ':''}${m.model||'—'}${m.band?' '+m.band:''}</td>
       <td><input type="number" value="${m.freq}" step="0.025" data-fp="freq" data-i="${i}" style="width:100px;font-family:monospace"></td>
@@ -2858,23 +2865,27 @@ function renderFreqPlan(){
     inp.onchange=()=>{
       const i=parseInt(inp.dataset.i),m=S.mics[i];
       if(!m)return;
-      if(inp.dataset.fp==='name'){ m.name=inp.value.trim()||m.name; }
-      else if(inp.dataset.fp==='group'){ m.group=inp.value.trim()||'Groupe 1'; }
-      else{
-        const f=parseFloat(inp.value);
-        if(isNaN(f))return;
-        m.freq=snapFreq(m,f);
-        m.tntConflict=S.ch.some(c=>c.occupied&&m.freq>=c.freq_start&&m.freq<c.freq_end);
-      }
-      computeIM(); renderAll();
+      const f=inp.dataset.fp;
+      if(f==='name'){ m.name=inp.value.trim()||m.name; renderAll(); }
+      else if(f==='porteur'){ m.porteur=inp.value.trim(); renderAll(); }
+      else if(f==='group'){ m.group=inp.value.trim()||'Groupe 1'; renderAll(); }
+      else if(f==='color'){ m.color=inp.value; renderAll(); }
+      else{ const v=parseFloat(inp.value); if(isNaN(v))return; m.freq=snapFreq(m,v); m.tntConflict=S.ch.some(c=>c.occupied&&m.freq>=c.freq_start&&m.freq<c.freq_end); computeIM(); renderAll(); }
     };
   });
+  w.querySelectorAll('[data-fp-move]').forEach(b=>b.onclick=()=>moveMic(parseInt(b.dataset.i),b.dataset.fpMove==='up'?-1:1));
+}
+// Réordonne un micro dans la liste (et donc la numérotation partout).
+function moveMic(i,dir){
+  const j=i+dir; if(i<0||j<0||j>=S.mics.length)return;
+  const t=S.mics[i]; S.mics[i]=S.mics[j]; S.mics[j]=t;
+  renderAll();
 }
 
 // ligne libre : fréquence manuelle, sans modèle imposé
 document.getElementById('fpAdd').onclick=()=>{
   const freq=autoAssign(470,694,350)||470.3;
-  S.mics.push({id:Date.now(),name:'Ligne '+(S.mics.length+1),brand:'',model:'Libre',band:'',kind:'mic',
+  S.mics.push({id:Date.now(),name:'Ligne '+(S.mics.length+1),porteur:'',brand:'',model:'Libre',band:'',kind:'mic',
     freq,fmin:470,fmax:694,bw:200,spacing:350,tuneStep:25,group:S.curGroup||'Groupe 1',
     tntConflict:S.ch.some(c=>c.occupied&&freq>=c.freq_start&&freq<c.freq_end),
     color:MC[S.mics.length%MC.length],imHits:[]});
@@ -2897,8 +2908,8 @@ function exportPlanCsv(){
   rows.push('Position GPS,'+q(S.lat+', '+S.lon));
   rows.push('Exporté le,'+q(new Date().toLocaleString('fr-FR')));
   rows.push('');
-  rows.push('Nom,Marque,Modèle,Gamme,Fréquence (MHz),Plage min,Plage max,Espacement (kHz),Conflit TNT,IM 2 tons,IM 3 tons');
-  S.mics.forEach(m=>rows.push(`${q(m.name)},${m.brand||''},${m.model||''},${m.band||''},${m.freq},${m.fmin},${m.fmax},${m.spacing||m.bw},${m.tntConflict?'OUI':'non'},${m.imHits?m.imHits.length:0},${m.imHits3?m.imHits3.length:0}`));
+  rows.push('Nom,Porteur,Marque,Modèle,Gamme,Fréquence (MHz),Plage min,Plage max,Espacement (kHz),Conflit TNT,IM 2 tons,IM 3 tons');
+  S.mics.forEach(m=>rows.push(`${q(m.name)},${q(m.porteur||'')},${m.brand||''},${m.model||''},${m.band||''},${m.freq},${m.fmin},${m.fmax},${m.spacing||m.bw},${m.tntConflict?'OUI':'non'},${m.imHits?m.imHits.length:0},${m.imHits3?m.imHits3.length:0}`));
   const b=new Blob([rows.join('\n')],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');a.href=URL.createObjectURL(b);
   const slug=(S.meta.title||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
@@ -2909,7 +2920,8 @@ const csvq=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
 // fréquences. CRLF + point décimal pour les logiciels Windows.
 function buildVendorCsv(header){
   const rows=[header];
-  S.mics.forEach(m=>{ if(isFinite(m.freq)) rows.push(`${csvq(m.name)},${m.freq.toFixed(3)}`); });
+  // nom de canal = porteur si renseigné (utile à l'affichage récepteur), sinon nom de liaison
+  S.mics.forEach(m=>{ if(isFinite(m.freq)) rows.push(`${csvq(m.porteur||m.name)},${m.freq.toFixed(3)}`); });
   return rows.join('\r\n');
 }
 function vendorName(profile){
@@ -2951,7 +2963,7 @@ function importPlanCsv(text){
     let mi=-1;
     if(p.name) mi=S.mics.findIndex((x,i)=>!used.has(i)&&(x.name||'').trim().toLowerCase()===p.name.trim().toLowerCase());
     if(mi>=0){ const m=S.mics[mi]; used.add(mi); m.freq=snapFreq(m,p.freq); m.locked=true; m.tntConflict=S.ch.some(c=>c.occupied&&m.freq>=c.freq_start&&m.freq<c.freq_end); updated++; }
-    else { const f=parseFloat(p.freq.toFixed(3)); S.mics.push({id:Date.now()+k,name:p.name||('Import '+(added+1)),brand:'',model:'Importé',band:'',kind:'mic',freq:f,fmin:470,fmax:694,bw:200,spacing:350,tuneStep:25,locked:true,tntConflict:S.ch.some(c=>c.occupied&&f>=c.freq_start&&f<c.freq_end),group:S.curGroup||'Groupe 1',color:MC[S.mics.length%MC.length],imHits:[]}); added++; }
+    else { const f=parseFloat(p.freq.toFixed(3)); S.mics.push({id:Date.now()+k,name:p.name||('Import '+(added+1)),porteur:'',brand:'',model:'Importé',band:'',kind:'mic',freq:f,fmin:470,fmax:694,bw:200,spacing:350,tuneStep:25,locked:true,tntConflict:S.ch.some(c=>c.occupied&&f>=c.freq_start&&f<c.freq_end),group:S.curGroup||'Groupe 1',color:MC[S.mics.length%MC.length],imHits:[]}); added++; }
   });
   computeIM(); renderAll();
   setSt(`Plan importé : ${updated} fréquence(s) mise(s) à jour${added?', '+added+' ligne(s) ajoutée(s)':''}. IM recalculées.`);
