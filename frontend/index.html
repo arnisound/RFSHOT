@@ -179,6 +179,12 @@ tr:hover td{background:var(--bg2)}
     <select id="selBrand" style="max-width:150px"><option value="">— Marque —</option></select>
     <select id="selModel" style="max-width:180px" disabled><option value="">— Modèle —</option></select>
     <select id="selBand" style="max-width:190px" disabled><option value="">— Gamme —</option></select>
+    <span id="micPerso" style="display:none;align-items:center;gap:5px">
+      <input type="number" id="micFmin" placeholder="f min" step="0.025" style="width:78px" title="Fréquence basse de la bande (MHz)">
+      <span style="color:var(--text2)">–</span>
+      <input type="number" id="micFmax" placeholder="f max" step="0.025" style="width:78px" title="Fréquence haute de la bande (MHz)">
+      <span style="font-size:11px;color:var(--text2)">MHz</span>
+    </span>
     <input type="number" id="micCount" min="1" max="50" value="1" title="Nombre de micros" style="width:60px">
     <select id="grpSelMic" class="grpSel adv-only" title="Groupe d'affectation des nouveaux micros" style="max-width:150px"></select>
     <button class="btn btn-green" id="addBtn"><i class="ti ti-plus"></i> Ajouter</button>
@@ -192,6 +198,12 @@ tr:hover td{background:var(--bg2)}
     <select id="selBrandI" style="max-width:150px"><option value="">— Marque —</option></select>
     <select id="selModelI" style="max-width:180px" disabled><option value="">— Modèle —</option></select>
     <select id="selBandI" style="max-width:190px" disabled><option value="">— Gamme —</option></select>
+    <span id="iemPerso" style="display:none;align-items:center;gap:5px">
+      <input type="number" id="iemFmin" placeholder="f min" step="0.025" style="width:78px" title="Fréquence basse de la bande (MHz)">
+      <span style="color:var(--text2)">–</span>
+      <input type="number" id="iemFmax" placeholder="f max" step="0.025" style="width:78px" title="Fréquence haute de la bande (MHz)">
+      <span style="font-size:11px;color:var(--text2)">MHz</span>
+    </span>
     <input type="number" id="iemCount" min="1" max="50" value="1" title="Nombre de retours IEM" style="width:60px">
     <select id="grpSelIem" class="grpSel adv-only" title="Groupe d'affectation des nouveaux retours" style="max-width:150px"></select>
     <button class="btn btn-green" id="addIemBtn"><i class="ti ti-plus"></i> Ajouter</button>
@@ -966,6 +978,8 @@ const MIC_CATALOG={
     "SK 9000":{sp:600,b:[["A1-A4",470,558],["A5-A8",550,638],["B1-B4 (EU ≤694)",630,694]]},
     "EW100 G4":{sp:400,b:[["A1",470,516],["A",516,558],["AS",520,558],["G",566,608],["GB",606,648],["B",626,668],["E (823–832)",823,832],["E (863–865)",863,865]]},
     "EW300/500 G4":{sp:400,b:[["AW+",470,558],["GW1",558,608],["GW",558,626],["GBW",606,678],["BW",626,698]]},
+    "evolution G3 (ew 100/300/500)":{sp:400,b:[["A",516,558],["G",566,608],["GB",606,648],["B",626,668],["E (863–865)",863,865]]},
+    "evolution G2 (ew 100/300/500)":{sp:400,b:[["A",518,554],["G",566,608],["B",626,662],["E (863–865)",863,865]]},
     "2000 Series":{sp:400,b:[["AW",516,558],["GW",558,626],["BW",626,698]]},
     "XSW 1/2":{sp:400,b:[["A",548,572],["B",614,638],["E (823–832)",823,832],["E (863–865)",863,865]]}
   },
@@ -996,7 +1010,8 @@ const MIC_CATALOG={
   },
   "AKG":{
     "DMS800 (num.)":{sp:400,b:[["BD1 (EU ≤694)",548,694]]},
-    "WMS470 (ana.)":{sp:400,b:[["B7",500,531],["B8",570,601],["B9",600,631],["B1",650,680]]}
+    "WMS470 (ana.)":{sp:400,b:[["B7",500,531],["B8",570,601],["B9",600,631],["B1",650,680]]},
+    "WMS40 Mini / Mini2":{sp:400,b:[["ISM 863–865",863,865]]}
   },
   "Mipro":{
     "ACT-5xx / ACT-7xx":{sp:400,b:[["470–694 (selon version)",470,694]]}
@@ -1018,18 +1033,11 @@ const MIC_CATALOG={
     "U300 (ana.)":{sp:400,b:[["470–490",470,490],["514–542",514,542],["584–608",584,608],["655–679",655,679],["823–832 (PMSE)",823,832],["863–865 (libre)",863,865]]},
     "U500 (ana.)":{sp:400,b:[["U505 (584–608)",584,608],["U506 (655–679)",655,679],["U508 (823–832)",823,832],["U508 (863–865)",863,865]]},
     "WS 1000 G2 (ana.)":{sp:400,b:[["823–832 (PMSE)",823,832],["863–865 (libre)",863,865]]}
-  },
-  "Audio-Technica (2.4 GHz)":{
-    "System 10 Pro":{sp:1000,b:[["2.4 GHz",2400,2483]]}
-  },
-  "Røde":{
-    "Wireless GO II":{sp:1000,b:[["2.4 GHz",2400,2483]]},
-    "Wireless ME":{sp:1000,b:[["2.4 GHz",2400,2483]]}
-  },
-  "DJI":{
-    "Mic 2":{sp:2000,b:[["2.4 GHz",2400,2483]]}
   }
 };
+// NB : le matériel 2,4 GHz (Røde Wireless GO/ME, DJI Mic, A-T System 10…) est
+// volontairement EXCLU : auto-coordonné par sauts de fréquence, il ne se planifie
+// pas comme l'UHF (voir note d'aide).
 
 // Retours in-ear (ear monitors) — ligne « + IEM »
 const IEM_CATALOG={
@@ -1040,6 +1048,8 @@ const IEM_CATALOG={
   },
   "Sennheiser":{
     "EW IEM G4":{sp:400,b:[["A1",470,516],["A",516,558],["AS",520,558],["G",566,608],["GB",606,648],["B",626,668],["E (823–832)",823,832],["E (863–865)",863,865]]},
+    "ew IEM G3 (300/500)":{sp:400,b:[["A",516,558],["G",566,608],["GB",606,648],["B",626,668],["E (863–865)",863,865]]},
+    "ew IEM G2 (300/500)":{sp:400,b:[["A",518,554],["G",566,608],["B",626,662],["E (863–865)",863,865]]},
     "XSW IEM":{sp:400,b:[["A",476,500],["B",572,596],["C",662,686],["E (823–832)",823,832],["E (863–865)",863,865]]},
     "2000 IEM":{sp:400,b:[["AW",516,558],["GW",558,626],["BW",626,698]]}
   },
@@ -1066,10 +1076,20 @@ function setupPicker(cfg){
   const sb=document.getElementById(cfg.brand),sm=document.getElementById(cfg.model),
         sg=document.getElementById(cfg.band),hint=document.getElementById(cfg.hint),
         err=document.getElementById(cfg.err);
+  const perso=document.getElementById(cfg.perso),
+        fminEl=document.getElementById(cfg.fmin),fmaxEl=document.getElementById(cfg.fmax);
+  const isPerso=()=>sb.value==='__perso__';
   const md=()=>(cfg.catalog[sb.value]||{})[sm.value];                 // {sp,b}
   const cur=()=>{const m=md();return m&&sg.value!==''?m.b[parseInt(sg.value)]:null;};
-  sb.innerHTML='<option value="">— Marque —</option>'+optList(Object.keys(cfg.catalog));
+  // « Personnalisé » : saisie manuelle de la bande (matériel hors catalogue)
+  sb.innerHTML='<option value="">— Marque —</option>'+optList(Object.keys(cfg.catalog))+'<option value="__perso__">✏️ Personnalisé (bande manuelle)</option>';
   sb.onchange=()=>{
+    if(isPerso()){
+      sm.style.display='none'; sg.style.display='none'; if(perso)perso.style.display='inline-flex';
+      hint.textContent='Entrez la bande accordable de votre matériel (MHz).';
+      return;
+    }
+    sm.style.display=''; sg.style.display=''; if(perso)perso.style.display='none';
     sm.innerHTML='<option value="">— Modèle —</option>'+(sb.value?optList(Object.keys(cfg.catalog[sb.value])):'');
     sm.disabled=!sb.value;
     sg.innerHTML='<option value="">— Gamme —</option>'; sg.disabled=true;
@@ -1090,9 +1110,16 @@ function setupPicker(cfg){
   };
   document.getElementById(cfg.btn).onclick=()=>{
     err.style.display='none';
+    const count=Math.max(1,Math.min(50,parseInt(document.getElementById(cfg.count).value)||1));
+    if(isPerso()){
+      const lo=parseFloat(fminEl&&fminEl.value),hi=parseFloat(fmaxEl&&fmaxEl.value);
+      if(isNaN(lo)||isNaN(hi)||lo>=hi||lo<30||hi>1810){ err.textContent='Bande invalide (ex. 470–694). 2,4 GHz non coordonnable.'; err.style.display='inline'; return; }
+      const band=[lo.toFixed(3)+'–'+hi.toFixed(3),parseFloat(lo.toFixed(3)),parseFloat(hi.toFixed(3))];
+      addUnits(band,400,count,'Perso',cfg.kind==='iem'?'IEM perso':'Micro perso',cfg.kind,err);
+      return;
+    }
     const band=cur(),m=md();
     if(!band){err.textContent='Choisis marque, modèle et gamme';err.style.display='inline';return;}
-    const count=Math.max(1,Math.min(50,parseInt(document.getElementById(cfg.count).value)||1));
     addUnits(band,m.sp,count,sm.value,sb.value,cfg.kind,err);
   };
 }
@@ -1116,8 +1143,8 @@ function addUnits(band,sp,count,model,brand,kind,err){
   setSt(`${added} ${kind==='iem'?'IEM':'micro(s)'} ajouté(s)`+(fallback?` (${fallback} en attente de coordination)`:'')+' — recalculez le plan.');
 }
 
-setupPicker({brand:'selBrand', model:'selModel', band:'selBand', count:'micCount', btn:'addBtn',    hint:'hint',  err:'addErr',  catalog:MIC_CATALOG, kind:'mic'});
-setupPicker({brand:'selBrandI',model:'selModelI',band:'selBandI',count:'iemCount',btn:'addIemBtn',hint:'hintI',err:'addErrI',catalog:IEM_CATALOG, kind:'iem'});
+setupPicker({brand:'selBrand', model:'selModel', band:'selBand', count:'micCount', btn:'addBtn',    hint:'hint',  err:'addErr',  catalog:MIC_CATALOG, kind:'mic', perso:'micPerso', fmin:'micFmin', fmax:'micFmax'});
+setupPicker({brand:'selBrandI',model:'selModelI',band:'selBandI',count:'iemCount',btn:'addIemBtn',hint:'hintI',err:'addErrI',catalog:IEM_CATALOG, kind:'iem', perso:'iemPerso', fmin:'iemFmin', fmax:'iemFmax'});
 
 // Masques de fréquences : 1 cellule = 25 kHz, marquage ± garde, test O(1).
 const FGRID=40;
