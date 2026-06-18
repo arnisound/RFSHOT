@@ -167,6 +167,8 @@ tr:hover td{background:var(--bg2)}
       <option value="100">Émetteurs ≤ 100 km</option>
     </select>
     <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+      <button class="btn btn-xs" id="undoBtn" title="Annuler (Ctrl/⌘+Z)" disabled><i class="ti ti-arrow-back-up"></i></button>
+      <button class="btn btn-xs" id="redoBtn" title="Rétablir (Ctrl/⌘+Maj+Z)" disabled><i class="ti ti-arrow-forward-up"></i></button>
       <button class="btn btn-xs" id="clearBtn" style="border-color:var(--red);color:var(--red)"><i class="ti ti-trash"></i> Tout effacer</button>
       <button class="btn btn-xs" id="csvBtn" title="Exporter le plan en CSV"><i class="ti ti-download"></i> CSV</button>
       <button class="btn btn-xs" id="reportBtn" title="Rapport imprimable (PDF) : plan, analyse IM, score de fiabilité, fréquences de secours et contexte TNT/scan — pour archivage et cross-validation."><i class="ti ti-file-text"></i> Rapport</button>
@@ -844,7 +846,7 @@ function fitPlanToScan(){
 document.addEventListener('click',e=>{
   const imp=e.target.closest('.scan-imp'), clr=e.target.closest('.scan-clear'), gen=e.target.closest('.scan-gen');
   if(imp){ document.getElementById('impFile').click(); }
-  else if(clr){ S.scan=null; S.useScanBlock=false; renderScanInfo(); drawSpec(); setSt('Scan retiré.'); }
+  else if(clr){ S.scan=null; S.useScanBlock=false; renderScanInfo(); drawSpec(); if(typeof histCapture==='function')histCapture(); setSt('Scan retiré.'); }
   else if(gen){ generateApplyPlan(); }
 });
 
@@ -920,6 +922,7 @@ document.getElementById('impFile').onchange=(ev)=>{
       markPlanDirty();
       renderScanInfo();
       drawSpec();
+      if(typeof histCapture==='function') histCapture();
       const thr=scanThreshold();
       setSt(`✓ Scan « ${file.name} » importé — ${meta.count} points. Le plan auto évitera les pics/bruit${thr!=null?' (seuil '+thr.toFixed(0)+' dBm)':''} : régénérez le plan.`);
     }catch(e){setSt('Erreur lecture scan : '+e.message);}
@@ -1962,6 +1965,7 @@ function renderGroups(){
   h+='</div>';
   w.innerHTML=h;
   wireGroups();
+  if(typeof histCapture==='function') histCapture();
 }
 function wireGroups(){
   const nb=document.getElementById('grpNewBtn'); if(nb) nb.onclick=createGroup;
@@ -2105,6 +2109,70 @@ document.getElementById('resAdd').onclick=()=>{
 refreshGroupSelectors(); renderReserved(); renderExcl();
 
 // ── RENDER ────────────────────────────────────────────────────────────
+// ── ANNULER / RÉTABLIR ────────────────────────────────────────────────
+// Capture centralisée : après chaque rendu, on compare une signature de l'état
+// « document » ; si elle a changé on empile un instantané. Couvre toutes les
+// actions (ajout/suppression/ordre, édition de fréquence, plan appliqué, scan,
+// coordination…) sans instrumenter chaque fonction.
+let HIST=[],HPTR=-1,histLock=false,histSig=null;const HMAX=60;
+function histDoc(){return JSON.stringify({
+  m:S.mics.map(m=>[m.id,m.name,m.freq,!!m.locked,m.group,m.fmin,m.fmax,m.spacing,m.kind,m.brand,m.model,m.band,m.tuneStep,m.color,!!m.tntConflict]),
+  g:S.groups,gz:S.groupZones,zc:S.zoneCoord,rg:S.reservedGlobal,ez:S.exclZones,gc:S.groupColors,
+  cg:S.curGroup,sc:S.scan?(S.scan.name+'#'+(S.scan.points?S.scan.points.length:0)):null,sb:!!S.useScanBlock,
+  sp:S.spareN,td:S.txDist,gm:S.guardMode,ic:!!S.iemNoCombiner,meta:S.meta });}
+function histSnap(){return {
+  mics:S.mics.map(m=>Object.assign({},m)),scan:S.scan,useScanBlock:S.useScanBlock,
+  groups:S.groups.slice(),groupZones:JSON.parse(JSON.stringify(S.groupZones||{})),
+  zoneCoord:JSON.parse(JSON.stringify(S.zoneCoord||{})),reservedGlobal:(S.reservedGlobal||[]).slice(),
+  exclZones:(S.exclZones||[]).map(z=>Object.assign({},z)),groupColors:Object.assign({},S.groupColors),
+  curGroup:S.curGroup,spareN:S.spareN,txDist:S.txDist,guardMode:S.guardMode,iemNoCombiner:S.iemNoCombiner,
+  meta:Object.assign({},S.meta) };}
+function histCapture(){
+  if(histLock)return;
+  const sig=histDoc(); if(sig===histSig)return;
+  histSig=sig;
+  if(HPTR<HIST.length-1) HIST=HIST.slice(0,HPTR+1);   // on coupe la branche « rétablir »
+  HIST.push(histSnap());
+  if(HIST.length>HMAX){ HIST.shift(); }
+  HPTR=HIST.length-1;
+  updateUndoUI();
+}
+function histSyncControls(){
+  const set=(id,v)=>{const e=document.getElementById(id); if(e)e.value=v;};
+  set('setTxDist',S.txDist||'near'); set('setGuard',S.guardMode||'auto');
+  const ic=document.getElementById('setIemNoComb'); if(ic)ic.checked=!!S.iemNoCombiner;
+  if(typeof updateGuardInfo==='function') updateGuardInfo();
+  try{ META_FIELDS.forEach(([k])=>{const e=document.getElementById('fp_'+k); if(e)e.value=S.meta[k]||'';}); }catch(_){}
+}
+function histRestore(s){
+  histLock=true;
+  S.mics=s.mics.map(m=>Object.assign({},m)); S.scan=s.scan; S.useScanBlock=s.useScanBlock;
+  S.groups=s.groups.slice(); S.groupZones=JSON.parse(JSON.stringify(s.groupZones));
+  S.zoneCoord=JSON.parse(JSON.stringify(s.zoneCoord)); S.reservedGlobal=s.reservedGlobal.slice();
+  S.exclZones=s.exclZones.map(z=>Object.assign({},z)); S.groupColors=Object.assign({},s.groupColors);
+  S.curGroup=s.curGroup; S.spareN=s.spareN; S.txDist=s.txDist; S.guardMode=s.guardMode; S.iemNoCombiner=s.iemNoCombiner;
+  S.meta=Object.assign({},s.meta);
+  histSyncControls(); computeIM(); renderScanInfo(); renderAll();
+  const gp=document.getElementById('pane-groups'); if(gp&&gp.classList.contains('on')) renderGroups();
+  histSig=histDoc(); histLock=false; updateUndoUI();
+}
+function undo(){ if(HPTR>0){ HPTR--; histRestore(HIST[HPTR]); setSt('Action annulée.'); } }
+function redo(){ if(HPTR<HIST.length-1){ HPTR++; histRestore(HIST[HPTR]); setSt('Action rétablie.'); } }
+function updateUndoUI(){
+  const u=document.getElementById('undoBtn'),r=document.getElementById('redoBtn');
+  if(u)u.disabled=HPTR<=0; if(r)r.disabled=HPTR>=HIST.length-1;
+}
+document.getElementById('undoBtn').onclick=undo;
+document.getElementById('redoBtn').onclick=redo;
+document.addEventListener('keydown',e=>{
+  if(!(e.ctrlKey||e.metaKey))return;
+  const tag=(e.target&&e.target.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea')return;            // laisse l'annulation native dans les champs
+  const k=(e.key||'').toLowerCase();
+  if(k==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); }
+  else if(k==='y'){ e.preventDefault(); redo(); }
+});
+
 function renderAll(){
   renderTable(); drawSpec(); renderFreqPlan();
   const occ=S.ch.filter(c=>c.occupied).length;
@@ -2118,6 +2186,7 @@ function renderAll(){
   const gp=document.getElementById('pane-groups');
   if(gp&&gp.classList.contains('on')) renderGroups();
   renderGroupChips(); renderAdvList(); updatePlanDirty();
+  histCapture();
 }
 
 // Cellule « Émetteur » d'un canal TV : nom / lieu (distance) · mux
@@ -2901,6 +2970,7 @@ document.getElementById('fpImportFile').onchange=ev=>{
 function setSt(t){document.getElementById('st').textContent=t;}
 window.addEventListener('resize',()=>drawSpec());
 drawSpec();
+histCapture();   // instantané initial (base de l'historique Annuler/Rétablir)
 </script>
 </body>
 </html>
