@@ -61,6 +61,9 @@ label.chk{font-size:11px;color:var(--text2);display:flex;align-items:center;gap:
 .tab{padding:8px 16px;font-size:12px;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2);display:flex;align-items:center;gap:5px}
 .tab.on{color:var(--text);border-bottom-color:var(--blue);background:var(--bg)}
 .pane{display:none;min-height:300px}.pane.on{display:block}
+.subnav{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0}
+.subnav button{padding:5px 12px;font-size:12px;cursor:pointer;border:0.5px solid var(--border);border-radius:999px;background:var(--bg2);color:var(--text2)}
+.subnav button.on{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
 
 /* TABLE */
 .tbl-sc{overflow:auto;max-height:520px}
@@ -225,10 +228,8 @@ tr:hover td{background:var(--bg2)}
 <div class="tabs">
   <div class="tab on" data-t="table"><i class="ti ti-list"></i> Liste</div>
   <div class="tab" data-t="spectrum"><i class="ti ti-wave-sine"></i> Spectre</div>
-  <div class="tab adv-only" data-t="advspec"><i class="ti ti-chart-dots"></i> Spectre avancé</div>
-  <div class="tab" data-t="plan"><i class="ti ti-wand"></i> Plan auto</div>
+  <div class="tab" data-t="plan"><i class="ti ti-adjustments"></i> Coordination</div>
   <div class="tab adv-only" data-t="groups"><i class="ti ti-layout-grid"></i> Groupes</div>
-  <div class="tab" data-t="fplan"><i class="ti ti-edit"></i> Plan fréquences</div>
 </div>
 
 <!-- TABLE -->
@@ -246,6 +247,10 @@ tr:hover td{background:var(--bg2)}
 
 <!-- SPECTRUM -->
 <div class="pane" id="pane-spectrum">
+  <div class="subnav adv-only">
+    <button data-sub="spectrum" class="on"><i class="ti ti-wave-sine"></i> Vue spectre</button>
+    <button data-sub="advspec"><i class="ti ti-chart-dots"></i> Placement manuel</button>
+  </div>
   <div class="spec-pad">
     <div class="spec-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
       <button class="btn btn-xs scan-imp" id="impBtn" title="Importer un scan de spectre (CSV) exporté depuis Shure Wireless Workbench, Sennheiser WSM, RF Explorer, tinySA, etc."><i class="ti ti-file-upload"></i> Importer un scan</button>
@@ -274,6 +279,10 @@ tr:hover td{background:var(--bg2)}
 
 <!-- SPECTRE AVANCÉ -->
 <div class="pane adv-only" id="pane-advspec">
+  <div class="subnav adv-only">
+    <button data-sub="spectrum"><i class="ti ti-wave-sine"></i> Vue spectre</button>
+    <button data-sub="advspec" class="on"><i class="ti ti-chart-dots"></i> Placement manuel</button>
+  </div>
   <div class="spec-pad">
     <div class="spec-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
       <strong style="font-size:13px">Spectre avancé</strong>
@@ -311,6 +320,10 @@ tr:hover td{background:var(--bg2)}
 
 <!-- PLAN AUTO -->
 <div class="pane" id="pane-plan">
+  <div class="subnav">
+    <button data-sub="plan" class="on"><i class="ti ti-wand"></i> Génération auto</button>
+    <button data-sub="fplan"><i class="ti ti-edit"></i> Plan éditable</button>
+  </div>
   <div class="plan-pad">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
       <strong>Plan fréquences automatique</strong>
@@ -396,6 +409,10 @@ tr:hover td{background:var(--bg2)}
 
 <!-- PLAN FREQUENCES (éditable) -->
 <div class="pane" id="pane-fplan">
+  <div class="subnav">
+    <button data-sub="plan"><i class="ti ti-wand"></i> Génération auto</button>
+    <button data-sub="fplan" class="on"><i class="ti ti-edit"></i> Plan éditable</button>
+  </div>
   <div class="plan-pad">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
       <strong>Plan de fréquences</strong>
@@ -701,21 +718,30 @@ async function checkBackend(){
 checkBackend();
 
 // ── TABS ──────────────────────────────────────────────────────────────
-document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
-  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+// Onglets : 4 onglets principaux (Liste, Spectre, Coordination, Groupes).
+// Spectre et Coordination regroupent chacun 2 sous-vues (sous-nav en pilules).
+//   Spectre      : spectrum (vue) + advspec (placement manuel, avancé)
+//   Coordination : plan (génération auto) + fplan (plan éditable)
+const SUB_OF={spectrum:'spectrum',advspec:'spectrum',plan:'plan',fplan:'plan'}; // sous-pane → onglet principal
+S._sub={spectrum:'spectrum',plan:'plan'};   // sous-vue retenue par groupe
+function showPane(id){
   document.querySelectorAll('.pane').forEach(x=>x.classList.remove('on'));
-  t.classList.add('on');
-  document.getElementById('pane-'+t.dataset.t).classList.add('on');
-  if(t.dataset.t==='spectrum'){ renderGroupChips(); drawSpec(); }
-  if(t.dataset.t==='advspec'){ renderAdvList(); drawSpec(); }
-  if(t.dataset.t==='groups') renderGroups();
-}));
-function showTab(id){
-  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
-  document.querySelectorAll('.pane').forEach(x=>x.classList.remove('on'));
-  document.querySelector(`[data-t="${id}"]`).classList.add('on');
-  document.getElementById('pane-'+id).classList.add('on');
+  const p=document.getElementById('pane-'+id); if(p)p.classList.add('on');
+  const top=SUB_OF[id]||id;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.t===top));
+  document.querySelectorAll('[data-sub]').forEach(b=>b.classList.toggle('on',b.dataset.sub===id));
+  if(top==='spectrum') S._sub.spectrum=id; if(top==='plan') S._sub.plan=id;
+  if(id==='spectrum'){ renderGroupChips(); drawSpec(); }
+  if(id==='advspec'){ renderAdvList(); drawSpec(); }
+  if(id==='groups') renderGroups();
+  if(id==='fplan') renderFreqPlan();
 }
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  const tk=t.dataset.t;
+  showPane((tk==='spectrum'||tk==='plan')?S._sub[tk]:tk);   // onglet groupé → dernière sous-vue
+}));
+document.querySelectorAll('[data-sub]').forEach(b=>b.addEventListener('click',()=>showPane(b.dataset.sub)));
+function showTab(id){ showPane(id); }
 
 // ── MODE Standard / Avancé ────────────────────────────────────────────
 // Standard : plan de fréquences simple (~30 liaisons), tout coordonné — sans
@@ -727,8 +753,13 @@ function applyMode(m){
   document.body.classList.toggle('mode-adv',S.mode==='adv');
   document.querySelectorAll('#modeSw button').forEach(b=>b.classList.toggle('on',b.dataset.mode===S.mode));
   try{ localStorage.setItem('rfshot-mode',S.mode); }catch(e){}
-  // en Standard, l'onglet Groupes est masqué : repli sur le Tableau si actif
-  if(S.mode==='std'&&document.querySelector('[data-t="groups"]').classList.contains('on')) showTab('table');
+  // en Standard, Groupes et Placement manuel sont masqués : repli si actifs
+  if(S.mode==='std'){
+    S._sub.spectrum='spectrum';
+    const active=document.querySelector('.pane.on');
+    if(active&&active.id==='pane-groups') showPane('table');
+    else if(active&&active.id==='pane-advspec') showPane('spectrum');
+  }
 }
 document.querySelectorAll('#modeSw button').forEach(b=>b.onclick=()=>applyMode(b.dataset.mode));
 applyMode((()=>{ try{ return localStorage.getItem('rfshot-mode'); }catch(e){ return null; } })()||'std');
