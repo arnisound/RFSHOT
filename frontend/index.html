@@ -169,6 +169,9 @@ tr:hover td{background:var(--bg2)}
     <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
       <button class="btn btn-xs" id="undoBtn" title="Annuler (Ctrl/⌘+Z)" disabled><i class="ti ti-arrow-back-up"></i></button>
       <button class="btn btn-xs" id="redoBtn" title="Rétablir (Ctrl/⌘+Maj+Z)" disabled><i class="ti ti-arrow-forward-up"></i></button>
+      <button class="btn btn-xs" id="saveProjBtn" title="Enregistrer le projet (fichier .easyrf.json) pour le retravailler plus tard"><i class="ti ti-device-floppy"></i> Enregistrer</button>
+      <button class="btn btn-xs" id="openProjBtn" title="Ouvrir un projet enregistré (.easyrf.json)"><i class="ti ti-folder-open"></i> Ouvrir</button>
+      <input type="file" id="openProjFile" accept=".json,application/json" hidden>
       <button class="btn btn-xs" id="clearBtn" style="border-color:var(--red);color:var(--red)"><i class="ti ti-trash"></i> Tout effacer</button>
       <button class="btn btn-xs" id="csvBtn" title="Exporter le plan en CSV"><i class="ti ti-download"></i> CSV</button>
       <button class="btn btn-xs" id="reportBtn" title="Rapport imprimable (PDF) : plan, analyse IM, score de fiabilité, fréquences de secours et contexte TNT/scan — pour archivage et cross-validation."><i class="ti ti-file-text"></i> Rapport</button>
@@ -2173,6 +2176,61 @@ document.addEventListener('keydown',e=>{
   if(k==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); }
   else if(k==='y'){ e.preventDefault(); redo(); }
 });
+
+// ── ENREGISTRER / OUVRIR UN PROJET (.easyrf.json) ─────────────────────
+// Sauvegarde complète : position, TNT analysée, micros (porteurs/couleurs/
+// verrous), scan mesuré, groupes/zones, coordination, métadonnées. Rechargeable
+// hors-ligne pour retravailler le plan sans relancer l'analyse.
+function projectData(){
+  return {
+    app:'EASYRF', version:1, saved:new Date().toISOString(),
+    lat:S.lat, lon:S.lon, mode:S.mode,
+    ch:S.ch,
+    mics:S.mics.map(m=>{const c=Object.assign({},m); delete c.imHits; delete c.imHits3; return c;}),
+    scan:S.scan, useScanBlock:S.useScanBlock, scanMargin:S.scanMargin,
+    groups:S.groups, groupZones:S.groupZones, zoneCoord:S.zoneCoord, groupColors:S.groupColors,
+    curGroup:S.curGroup, hiddenGroups:S.hiddenGroups, reservedGlobal:S.reservedGlobal, exclZones:S.exclZones,
+    txDist:S.txDist, guardMode:S.guardMode, iemNoCombiner:S.iemNoCombiner, spareN:S.spareN,
+    meta:S.meta, planSlots:S.planSlots
+  };
+}
+function projSlug(){ return ((S.meta&&S.meta.title||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''))||'projet'; }
+function saveProject(){
+  const b=new Blob([JSON.stringify(projectData())],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(b);
+  a.download=projSlug()+'.easyrf.json'; a.click();
+  setSt('Projet enregistré : '+a.download);
+}
+function loadProject(text){
+  let d; try{ d=JSON.parse(text); }catch(e){ setSt('Fichier projet illisible.'); return; }
+  if(!d||typeof d!=='object'||d.app!=='EASYRF'){ setSt('Ce fichier n\'est pas un projet EASYRF.'); return; }
+  S.lat=+d.lat||S.lat; S.lon=+d.lon||S.lon;
+  S.ch=Array.isArray(d.ch)?d.ch:[];
+  S.mics=(d.mics||[]).map(m=>Object.assign({imHits:[],imHits3:[]},m));
+  S.scan=d.scan||null; S.useScanBlock=!!d.useScanBlock; if(d.scanMargin!=null)S.scanMargin=d.scanMargin;
+  S.groups=(Array.isArray(d.groups)&&d.groups.length)?d.groups.slice():['Groupe 1'];
+  S.groupZones=d.groupZones||{}; S.zoneCoord=d.zoneCoord||{}; S.groupColors=d.groupColors||{};
+  S.curGroup=d.curGroup||S.groups[0]; S.hiddenGroups=d.hiddenGroups||{};
+  S.reservedGlobal=d.reservedGlobal||[]; S.exclZones=d.exclZones||[];
+  S.txDist=d.txDist||'near'; S.guardMode=d.guardMode||'auto'; S.iemNoCombiner=!!d.iemNoCombiner;
+  S.spareN=d.spareN||0; S.meta=d.meta||{}; S.planSlots=d.planSlots||[];
+  const set=(id,v)=>{const e=document.getElementById(id); if(e)e.value=v;};
+  set('lat',S.lat); set('lon',S.lon);
+  const adv=document.getElementById('advSens'); if(adv&&S.scanMargin!=null)adv.value=String(S.scanMargin);
+  histSyncControls();
+  try{ localStorage.setItem('rfshot_meta',JSON.stringify(S.meta)); }catch(e){}
+  applyMode(d.mode==='adv'?'adv':'std');
+  computeIM(); renderScanInfo(); drawSpec(); renderAll();
+  const gp=document.getElementById('pane-groups'); if(gp&&gp.classList.contains('on')) renderGroups();
+  HIST.length=0; HPTR=-1; histSig=null; histCapture();   // l'état chargé devient la base de l'historique
+  setSt('Projet « '+(S.meta.title||projSlug())+' » chargé — '+S.mics.length+' liaison(s)'+(S.ch.length?', TNT restaurée':'')+(S.scan?', scan restauré':'')+'.');
+}
+document.getElementById('saveProjBtn').onclick=saveProject;
+document.getElementById('openProjBtn').onclick=()=>document.getElementById('openProjFile').click();
+document.getElementById('openProjFile').onchange=ev=>{
+  const f=ev.target.files&&ev.target.files[0]; if(!f)return;
+  const rd=new FileReader(); rd.onload=()=>loadProject(String(rd.result)); rd.onerror=()=>setSt('Lecture du fichier impossible.'); rd.readAsText(f); ev.target.value='';
+};
 
 function renderAll(){
   renderTable(); drawSpec(); renderFreqPlan();
