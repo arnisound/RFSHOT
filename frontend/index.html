@@ -61,6 +61,12 @@ label.chk{font-size:11px;color:var(--text2);display:flex;align-items:center;gap:
 .tab{padding:8px 16px;font-size:12px;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2);display:flex;align-items:center;gap:5px}
 .tab.on{color:var(--text);border-bottom-color:var(--blue);background:var(--bg)}
 .pane{display:none;min-height:300px}.pane.on{display:block}
+.menu-wrap{position:relative;display:inline-block}
+.menu{position:absolute;right:0;top:calc(100% + 4px);min-width:210px;background:var(--bg);border:0.5px solid var(--border);border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:4px;display:none;z-index:60}
+.menu.on{display:block}
+.menu button{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;font-size:12px;background:none;border:none;color:var(--text);cursor:pointer;border-radius:6px;text-align:left}
+.menu button:hover{background:var(--bg2)}
+.menu hr{border:none;border-top:0.5px solid var(--border);margin:4px 2px}
 
 /* TABLE */
 .tbl-sc{overflow:auto;max-height:520px}
@@ -167,14 +173,20 @@ tr:hover td{background:var(--bg2)}
       <option value="100">Émetteurs ≤ 100 km</option>
     </select>
     <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
-      <button class="btn btn-xs" id="undoBtn" title="Annuler (Ctrl/⌘+Z)" disabled><i class="ti ti-arrow-back-up"></i></button>
+      <button class="btn btn-xs" id="undoBtn" title="Annuler (Ctrl/⌘+Z)" disabled><i class="ti ti-arrow-back-up"></i> Annuler</button>
       <button class="btn btn-xs" id="redoBtn" title="Rétablir (Ctrl/⌘+Maj+Z)" disabled><i class="ti ti-arrow-forward-up"></i></button>
-      <button class="btn btn-xs" id="saveProjBtn" title="Enregistrer le projet (fichier .easyrf.json) pour le retravailler plus tard"><i class="ti ti-device-floppy"></i> Enregistrer</button>
-      <button class="btn btn-xs" id="openProjBtn" title="Ouvrir un projet enregistré (.easyrf.json)"><i class="ti ti-folder-open"></i> Ouvrir</button>
-      <input type="file" id="openProjFile" accept=".json,application/json" hidden>
       <button class="btn btn-xs" id="clearBtn" style="border-color:var(--red);color:var(--red)"><i class="ti ti-trash"></i> Tout effacer</button>
-      <button class="btn btn-xs" id="csvBtn" title="Exporter le plan en CSV"><i class="ti ti-download"></i> CSV</button>
-      <button class="btn btn-xs" id="reportBtn" title="Rapport imprimable (PDF) : plan, analyse IM, score de fiabilité, fréquences de secours et contexte TNT/scan — pour archivage et cross-validation."><i class="ti ti-file-text"></i> Rapport</button>
+      <div class="menu-wrap">
+        <button class="btn btn-xs" id="fileBtn"><i class="ti ti-folder"></i> Fichier <i class="ti ti-chevron-down" style="font-size:11px"></i></button>
+        <div class="menu" id="fileMenu">
+          <button id="saveProjBtn"><i class="ti ti-device-floppy"></i> Enregistrer le projet sous…</button>
+          <button id="openProjBtn"><i class="ti ti-folder-open"></i> Ouvrir un projet…</button>
+          <hr>
+          <button id="csvBtn"><i class="ti ti-download"></i> Exporter en CSV</button>
+          <button id="reportBtn"><i class="ti ti-file-text"></i> Imprimer un rapport</button>
+        </div>
+        <input type="file" id="openProjFile" accept=".json,application/json" hidden>
+      </div>
     </div>
   </div>
 
@@ -2183,7 +2195,7 @@ document.addEventListener('keydown',e=>{
 // hors-ligne pour retravailler le plan sans relancer l'analyse.
 function projectData(){
   return {
-    app:'EASYRF', version:1, saved:new Date().toISOString(),
+    app:'RFSHOT', version:1, saved:new Date().toISOString(),
     lat:S.lat, lon:S.lon, mode:S.mode,
     ch:S.ch,
     mics:S.mics.map(m=>{const c=Object.assign({},m); delete c.imHits; delete c.imHits3; return c;}),
@@ -2198,12 +2210,12 @@ function projSlug(){ return ((S.meta&&S.meta.title||'').toLowerCase().normalize(
 function saveProject(){
   const b=new Blob([JSON.stringify(projectData())],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(b);
-  a.download=projSlug()+'.easyrf.json'; a.click();
+  a.download=projSlug()+'.rfshot.json'; a.click();
   setSt('Projet enregistré : '+a.download);
 }
 function loadProject(text){
   let d; try{ d=JSON.parse(text); }catch(e){ setSt('Fichier projet illisible.'); return; }
-  if(!d||typeof d!=='object'||d.app!=='EASYRF'){ setSt('Ce fichier n\'est pas un projet EASYRF.'); return; }
+  if(!d||typeof d!=='object'||(d.app!=='RFSHOT'&&d.app!=='EASYRF')){ setSt('Ce fichier n\'est pas un projet RF SHOT.'); return; }
   S.lat=+d.lat||S.lat; S.lon=+d.lon||S.lon;
   S.ch=Array.isArray(d.ch)?d.ch:[];
   S.mics=(d.mics||[]).map(m=>Object.assign({imHits:[],imHits3:[]},m));
@@ -2231,6 +2243,14 @@ document.getElementById('openProjFile').onchange=ev=>{
   const f=ev.target.files&&ev.target.files[0]; if(!f)return;
   const rd=new FileReader(); rd.onload=()=>loadProject(String(rd.result)); rd.onerror=()=>setSt('Lecture du fichier impossible.'); rd.readAsText(f); ev.target.value='';
 };
+// Menu déroulant « Fichier »
+(function(){
+  const fb=document.getElementById('fileBtn'),fm=document.getElementById('fileMenu');
+  if(!fb||!fm)return;
+  fb.onclick=e=>{ e.stopPropagation(); fm.classList.toggle('on'); };
+  document.addEventListener('click',e=>{ if(!e.target.closest('.menu-wrap')) fm.classList.remove('on'); });
+  fm.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>fm.classList.remove('on')));
+})();
 
 function renderAll(){
   renderTable(); drawSpec(); renderFreqPlan();
