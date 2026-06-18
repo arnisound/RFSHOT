@@ -173,6 +173,12 @@ tr:hover td{background:var(--bg2)}
     </div>
   </div>
 
+  <!-- Bloc « Ajout matériel » repliable -->
+  <div class="trow" id="addHdr" style="cursor:pointer;user-select:none;font-weight:600;gap:6px;align-items:center" title="Afficher / masquer l'ajout de matériel">
+    <i class="ti ti-chevron-down" id="addChev"></i> Ajout matériel
+    <span style="font-weight:400;font-size:11px;color:var(--text2)">— micros &amp; IEM</span>
+  </div>
+  <div id="addWrap">
   <!-- Ligne 2 : ajout de micros -->
   <div class="trow add-bar">
     <span class="lbl" style="font-weight:600;min-width:52px">+ Micro</span>
@@ -210,6 +216,7 @@ tr:hover td{background:var(--bg2)}
     <span id="hintI" style="font-size:11px;color:var(--text2)"></span>
     <span id="addErrI" style="font-size:11px;color:var(--red);display:none"></span>
   </div>
+  </div><!-- /addWrap -->
 
   <!-- Ligne 4 : génération du plan -->
   <div class="trow">
@@ -1182,6 +1189,16 @@ function addUnits(band,sp,count,model,brand,kind,err){
 
 setupPicker({brand:'selBrand', model:'selModel', band:'selBand', count:'micCount', btn:'addBtn',    hint:'hint',  err:'addErr',  catalog:MIC_CATALOG, kind:'mic', perso:'micPerso', fmin:'micFmin', fmax:'micFmax'});
 setupPicker({brand:'selBrandI',model:'selModelI',band:'selBandI',count:'iemCount',btn:'addIemBtn',hint:'hintI',err:'addErrI',catalog:IEM_CATALOG, kind:'iem', perso:'iemPerso', fmin:'iemFmin', fmax:'iemFmax'});
+
+// Bloc « Ajout matériel » repliable (état mémorisé ; ouvert par défaut si liste vide)
+(function(){
+  const hdr=document.getElementById('addHdr'),wrap=document.getElementById('addWrap'),chev=document.getElementById('addChev');
+  if(!hdr||!wrap) return;
+  window.setAddOpen=function(open){ wrap.style.display=open?'':'none'; if(chev)chev.className='ti ti-chevron-'+(open?'down':'right'); try{localStorage.setItem('rfshot-addopen',open?'1':'0');}catch(e){} };
+  let saved=null; try{saved=localStorage.getItem('rfshot-addopen');}catch(e){}
+  setAddOpen(saved!=null?saved==='1':!(S.mics&&S.mics.length));
+  hdr.onclick=()=>setAddOpen(wrap.style.display==='none');
+})();
 
 // Masques de fréquences : 1 cellule = 25 kHz, marquage ± garde, test O(1).
 const FGRID=40;
