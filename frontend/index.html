@@ -4,11 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RF SHOT — Coordinateur PMSE RF France</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Ccircle cx='100' cy='100' r='96' fill='%230d0d0d'/%3E%3Cpath d='M24,118 L52,118 Q64,84 78,118 Q92,40 106,118 Q120,84 134,118 L176,118' fill='none' stroke='%23C8902F' stroke-width='12' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.4.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
   --blue:#185FA5;--blue-d:#0C447C;--green:#3B6D11;--red:#A32D2D;--amber:#854F0B;--purple:#534AB7;
+  --gold:#C8902F;--gold-d:#A9741E;--ink:#0d0d0d;
   --bg:#fff;--bg2:#f7f7f5;--bg3:#f0efe9;
   --text:#1a1a18;--text2:#666;--text3:#999;
   --border:rgba(0,0,0,.12);--border2:rgba(0,0,0,.2);
@@ -23,8 +25,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 
 /* HEADER */
 .header{background:var(--bg);border-bottom:0.5px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:12px}
-.logo{font-size:18px;font-weight:700;letter-spacing:-.5px;color:var(--blue)}
-.logo span{color:var(--text);font-weight:400}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-badge{height:42px;width:42px;flex:none;border-radius:50%}
+.logo-wm{font-size:19px;font-weight:800;letter-spacing:-.5px;color:var(--gold);line-height:1}
+.logo-wm b{color:var(--text);font-weight:800}
 .header-sub{font-size:11px;color:var(--text2)}
 
 /* MAIN */
@@ -42,13 +46,13 @@ select{padding:5px 8px;border:0.5px solid var(--border2);border-radius:var(--rad
 .btn:hover{background:var(--bg2)}
 .btn-blue{background:var(--blue);border-color:var(--blue);color:#fff}.btn-blue:hover{background:var(--blue-d)}
 .btn-green{background:var(--green);border-color:var(--green);color:#fff}.btn-green:hover{background:#27500A}
-.btn-purple{background:var(--purple);border-color:var(--purple);color:#fff}.btn-purple:hover{background:#3C3489}
+.btn-purple{background:var(--gold);border-color:var(--gold);color:#1a1a18;font-weight:600}.btn-purple:hover{background:var(--gold-d)}
 .btn-xs{padding:3px 7px;font-size:11px}
 .sep{width:0.5px;height:20px;background:var(--border)}
 /* Bascule Standard / Avancé */
 .modesw{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden}
 .modesw button{border:none;background:transparent;color:var(--text2);font-size:11px;font-weight:600;padding:4px 11px;cursor:pointer}
-.modesw button.on{background:var(--purple);color:#fff}
+.modesw button.on{background:var(--gold);color:#1a1a18}
 /* Éléments réservés au mode Avancé : masqués en mode Standard */
 body.mode-std .adv-only{display:none !important}
 /* Ligne surlignée dans la liste du Spectre avancé (survol/sélection porteuse) */
@@ -59,7 +63,7 @@ label.chk{font-size:11px;color:var(--text2);display:flex;align-items:center;gap:
 /* TABS */
 .tabs{display:flex;background:var(--bg2);border-bottom:0.5px solid var(--border)}
 .tab{padding:8px 16px;font-size:12px;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2);display:flex;align-items:center;gap:5px}
-.tab.on{color:var(--text);border-bottom-color:var(--blue);background:var(--bg)}
+.tab.on{color:var(--text);border-bottom-color:var(--gold);background:var(--bg)}
 .pane{display:none;min-height:300px}.pane.on{display:block}
 .menu-wrap{position:relative;display:inline-block}
 .menu{position:absolute;right:0;top:calc(100% + 4px);min-width:210px;background:var(--bg);border:0.5px solid var(--border);border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:4px;display:none;z-index:60}
@@ -136,7 +140,16 @@ tr:hover td{background:var(--bg2)}
 <body>
 
 <div class="header">
-  <div class="logo">RF&nbsp;<span>SHOT</span></div>
+  <div class="logo">
+    <svg class="logo-badge" viewBox="0 0 200 200" role="img" aria-label="RF SHOT">
+      <circle cx="100" cy="100" r="97" fill="none" stroke="rgba(140,140,140,.5)" stroke-width="2"/>
+      <circle cx="100" cy="100" r="90" fill="#0d0d0d"/>
+      <text x="100" y="86" text-anchor="middle" fill="#fff" font-family="-apple-system,Segoe UI,sans-serif" font-weight="800" font-size="42" letter-spacing="-1">RF SHOT</text>
+      <path d="M24,140 L46,140 Q56,116 66,140 Q80,100 94,140 Q100,60 106,140 Q120,100 134,140 Q144,116 154,140 L176,140"
+            fill="none" stroke="#C8902F" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span class="logo-wm">RF <b>SHOT</b></span>
+  </div>
   <div class="header-sub">Coordinateur PMSE · France · 470–694 & 822–838 MHz</div>
   <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
     <div class="modesw" id="modeSw" title="Standard : plan simple (~30 liaisons). Avancé : groupes, coordination par zone et options expert (100+ liaisons).">
