@@ -1008,6 +1008,7 @@ const MIC_CATALOG={
     "EW-D":{sp:600,b:[["Q1-6",470,526],["R1-6",520,576],["R4-9",552,608],["S1-7",606,662],["S4-7",630,662],["S7-10",662,694],["U1/5 (823–832)",823,832],["U1/5 (863–865)",863,865]]},
     "Digital 6000":{sp:600,b:[["A1-A4",470,558],["A5-A8",550,638],["B1-B4 (EU ≤694)",630,694]]},
     "SK 9000":{sp:600,b:[["A1-A4",470,558],["A5-A8",550,638],["B1-B4 (EU ≤694)",630,694]]},
+    "SK 5212-II (film 3000/5000)":{sp:400,st:5,b:[["L (470–638)",470,638],["N (614–694, ≤694 FR)",614,694]]},
     "EW100 G4":{sp:400,b:[["A1",470,516],["A",516,558],["AS",520,558],["G",566,608],["GB",606,648],["B",626,668],["E (823–832)",823,832],["E (863–865)",863,865]]},
     "EW300/500 G4":{sp:400,b:[["AW+",470,558],["GW1",558,608],["GW",558,626],["GBW",606,678],["BW",626,698]]},
     "evolution G3 (ew 100/300/500)":{sp:400,b:[["A",516,558],["G",566,608],["GB",606,648],["B",626,668],["E (863–865)",863,865]]},
@@ -1039,6 +1040,9 @@ const MIC_CATALOG={
   },
   "Zaxcom":{
     "ZMT4 / TRXLT":{sp:300,b:[["470–694",470,694]]}
+  },
+  "Audio Ltd":{
+    "A10-TX":{sp:300,b:[["A (470–548)",470,548],["B (518–608)",518,608],["C (594–694)",594,694]]}
   },
   "AKG":{
     "DMS800 (num.)":{sp:400,b:[["BD1 (EU ≤694)",548,694]]},
@@ -1182,11 +1186,11 @@ function setupPicker(cfg){
     }
     const band=cur(),m=md();
     if(!band){err.textContent='Choisis marque, modèle et gamme';err.style.display='inline';return;}
-    addUnits(band,m.sp,count,sm.value,sb.value,cfg.kind,err);
+    addUnits(band,m.sp,count,sm.value,sb.value,cfg.kind,err,m.st);
   };
 }
 
-function addUnits(band,sp,count,model,brand,kind,err){
+function addUnits(band,sp,count,model,brand,kind,err,step){
   const fmin=band[1],fmax=band[2],bw=sp>=1000?sp:200;
   const base=model+(band[0]?' '+band[0]:'');
   let added=0,fallback=0;
@@ -1196,7 +1200,7 @@ function addUnits(band,sp,count,model,brand,kind,err){
     let freq=autoAssign(fmin,fmax,sp,S.curGroup);
     if(!freq){ freq=parseFloat(Math.min(fmax-0.05,fmin+0.2+(added*(sp/1000))).toFixed(3)); fallback++; }
     const tntC=S.ch.find(c=>c.occupied&&freq>=c.freq_start&&freq<c.freq_end);
-    S.mics.push({id:Date.now()+i,name:count>1?base+' '+(added+1):base,porteur:'',brand,model,band:band[0]||'',kind,freq,fmin,fmax,bw,spacing:sp,tuneStep:25,tntConflict:!!tntC,group:S.curGroup||'Groupe 1',color:MC[S.mics.length%MC.length],imHits:[]});
+    S.mics.push({id:Date.now()+i,name:count>1?base+' '+(added+1):base,porteur:'',brand,model,band:band[0]||'',kind,freq,fmin,fmax,bw,spacing:sp,tuneStep:step||25,tntConflict:!!tntC,group:S.curGroup||'Groupe 1',color:MC[S.mics.length%MC.length],imHits:[]});
     computeIM(); added++;
   }
   err.style.display='none';
