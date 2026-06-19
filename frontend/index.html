@@ -878,7 +878,7 @@ function renderAdvList(){
       <td style="font-size:11px;color:var(--text2)">${m.kind==='iem'?'IEM':'Micro'}</td>
       <td style="font-size:11px;color:var(--text2)">${m.fmin}–${m.fmax}</td>
       <td><input type="number" value="${isFinite(m.freq)?m.freq:''}" step="0.025" data-advf="${m.id}" style="width:96px;font-family:monospace"></td>
-      <td>${micStatusBadge(m)}</td>
+      <td>${micStatusBadge(m)}${micTntNote(m)}</td>
       <td>${micStars(m)}</td>
       <td><button class="btn btn-xs${armed?' btn-purple':''}" data-place="${m.id}" title="Cliquez puis pointez le spectre">${armed?'cliquez le spectre…':'<i class="ti ti-crosshair"></i> Placer'}</button></td>
       <td><button class="btn btn-xs lockbtn${m.locked?' on':''}" data-advlock="${m.id}" title="${m.locked?'Verrouillé — clic pour libérer':'Verrouiller'}"><i class="ti ti-${m.locked?'lock':'lock-open'}"></i></button></td>
@@ -1363,6 +1363,36 @@ function micStatusBadge(m){
   if(n2) return `<span class="badge bWarn" title="Produits d'intermodulation 2 tons (2fA−fB / 3fA−2fB) tombant sur cette fréquence">IM×${n2}</span>`;
   if(n3) return `<span class="badge b3TX" title="Produits 3 émetteurs (fA+fB−fC), plus faibles : audibles seulement si 3 émetteurs proches émettent en même temps">3TX·${n3}</span>`;
   return '<span class="badge bOK">OK</span>';
+}
+
+// Espace libre dans la plage accordable d'un micro, hors canaux TNT occupés.
+function tntFreeInfo(m){
+  let totalFree=0,totalRange=0; const occCh=new Set();
+  const occ=S.ch.filter(c=>c.occupied);
+  PLAN_BANDS.forEach(r=>{
+    const lo=Math.max(r[0],m.fmin), hi=Math.min(r[1],m.fmax); if(hi<=lo) return;
+    totalRange+=hi-lo;
+    const cuts=occ.filter(c=>c.freq_end>lo&&c.freq_start<hi).sort((a,b)=>a.freq_start-b.freq_start);
+    let cur=lo;
+    cuts.forEach(c=>{ const zs=Math.max(c.freq_start,lo), ze=Math.min(c.freq_end,hi); occCh.add(c.ch); if(zs>cur) totalFree+=zs-cur; if(ze>cur) cur=ze; });
+    if(hi>cur) totalFree+=hi-cur;
+  });
+  return {freeMHz:totalFree, totalMHz:totalRange, occCh:[...occCh].sort((a,b)=>a-b)};
+}
+// Message expliquant pourquoi un micro est inutilisable / gêné par la TNT occupée.
+function micTntNote(m){
+  if(!S.ch.length) return '';
+  const sp=(m.spacing||350)/1000, info=tntFreeInfo(m);
+  if(info.totalMHz<=0) return '';
+  if(info.freeMHz<sp)
+    return `<div class="tnt-note" style="font-size:10px;color:var(--red);margin-top:2px" title="La plage accordable du modèle (${m.fmin}–${m.fmax} MHz) est entièrement occupée par la TNT à cet endroit : aucune fréquence propre possible. Choisissez un modèle couvrant d'autres canaux ou une zone géographique avec plus de canaux libres.">⚠ Inutilisable ici — plage saturée par la TNT${info.occCh.length?' (C'+info.occCh.join(', C')+')':''}</div>`;
+  if(m.tntConflict){
+    const c=S.ch.find(c=>c.occupied&&isFinite(m.freq)&&m.freq>=c.freq_start&&m.freq<c.freq_end);
+    return `<div class="tnt-note" style="font-size:10px;color:var(--red);margin-top:2px">Sur le canal TNT ${c?('C'+c.ch+(c.station||c.mux?' · '+(c.station||c.mux):'')):'occupé'} — ${info.freeMHz.toFixed(0)} MHz libres dans la plage : régénérez ou déplacez la fréquence.</div>`;
+  }
+  if(info.freeMHz<info.totalMHz*0.3)
+    return `<div class="tnt-note" style="font-size:10px;color:var(--amber);margin-top:2px" title="Peu de spectre libre dans la plage du modèle à cet endroit.">Plage encombrée par la TNT — ~${info.freeMHz.toFixed(0)}/${info.totalMHz.toFixed(0)} MHz libres</div>`;
+  return '';
 }
 
 // ── Score de fiabilité par liaison : 0 (interférences/bruit) → 5 étoiles
@@ -2340,7 +2370,7 @@ function renderTable(){
         <td style="font-family:monospace;font-weight:600;color:${m.color}">${m.freq} MHz</td>
         <td style="color:var(--text2);font-size:11px">${m.brand?m.brand+' ':''}${m.model||''}${m.band?' '+m.band:''}<br><span style="opacity:.7">${m.fmin}–${m.fmax} MHz · espacement ${m.spacing||m.bw} kHz</span></td>
         <td style="font-size:11px;color:var(--text2)">±${(m.bw/2).toFixed(0)} kHz</td>
-        <td>${sb}</td>
+        <td>${sb}${micTntNote(m)}</td>
         <td>${micStars(m)}</td>
         <td style="white-space:nowrap"><button class="btn btn-xs lockbtn${m.locked?' on':''}" style="padding:2px 5px" onclick="toggleLock(${m.id})" title="${m.locked?'Fréquence verrouillée — clic pour déverrouiller':'Verrouiller cette fréquence (conservée à la régénération du plan)'}"><i class="ti ti-${m.locked?'lock':'lock-open'}"></i></button> <button class="btn btn-xs" style="border-color:var(--red);color:var(--red);padding:2px 5px" onclick="rmMic(${m.id})"><i class="ti ti-x"></i></button></td></tr>`;
     } else {
@@ -2935,7 +2965,7 @@ function renderFreqPlan(){
       <td style="font-size:11px;color:var(--text2)">${m.brand?m.brand+' ':''}${m.model||'—'}${m.band?' '+m.band:''}</td>
       <td><input type="number" value="${m.freq}" step="0.025" data-fp="freq" data-i="${i}" style="width:100px;font-family:monospace"></td>
       <td style="font-size:11px;color:var(--text2)">${m.fmin}–${m.fmax}</td>
-      <td>${st}</td>
+      <td>${st}${micTntNote(m)}</td>
       <td>${micStars(m)}</td>
       <td><button class="btn btn-xs lockbtn${m.locked?' on':''}" onclick="toggleLock(${m.id})" title="${m.locked?'Fréquence verrouillée — clic pour déverrouiller':'Verrouiller cette fréquence (conservée à la régénération du plan)'}"><i class="ti ti-${m.locked?'lock':'lock-open'}"></i></button></td>
       <td><button class="btn btn-xs" onclick="rmMic(${m.id})" title="Supprimer"><i class="ti ti-x"></i></button></td>
