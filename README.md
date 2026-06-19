@@ -1,4 +1,5 @@
 # RF SHOT — Coordinateur PMSE RF France
+*by ARNISOUND TOOLS — LIVE & AV APP*
 
 ### 👉 [OUVRIR L'APPLICATION](https://arnisound.github.io/EASYRF/)
 
@@ -8,66 +9,89 @@
 
 ---
 
-Application de planification fréquences pour microphones sans fil (PMSE), basée sur les données de couverture TNT de l'ANFR.
+**RF SHOT** planifie les fréquences des liaisons HF (micros sans fil & oreillettes
+IEM) en France, dans les bandes UHF autorisées au son (PMSE). À partir de la
+couverture TNT réelle d'un lieu (données Arcom), il calcule un plan de
+fréquences **sans conflit** : pas de TNT, pas d'intermodulation gênante entre
+liaisons — puis l'exporte (feuille de scène, CSV, listes constructeur).
+
+Application **100 % navigateur**, sans installation. Tout le calcul est local.
+
+## Fonctionnalités
+
+- **TNT localisée** — canaux UHF C21–C48 (470–694 MHz) occupés/libres à vos
+  coordonnées, en direct depuis l'**Arcom (« Ma TNT »)** ; exclusion possible
+  des émetteurs lointains par distance.
+- **Catalogue multi-marque** (pro + amateur + **tournage cinéma**) : Shure,
+  Sennheiser (dont SK 5212-II film), Sony, Audio-Technica, Wisycom,
+  Lectrosonics, Sound Devices, Zaxcom, **Audio Ltd (A10)**, AKG, Mipro,
+  beyerdynamic, the t.bone, LD Systems, Behringer, Prodipe, Sirus… + IEM.
+  Bande **personnalisée** (saisie manuelle) et grille d'accord par modèle.
+- **Coordination automatique** — placement optimisé (« packing ») qui range les
+  produits d'intermodulation dans les canaux TNT occupés ou des canaux libres
+  « sacrifiés », pour caser un **maximum de porteuses**. Optimisation par
+  redémarrages multiples (best-of-N).
+- **Intermodulation** : IM3 (2fA−fB), IM5 (3fA−2fB), 3TX (fA+fB−fC) et **IM7**
+  (4fA−3fB, en option) — au-delà de la plupart des outils gratuits.
+- **Score de fiabilité 0–5 ★** par liaison, basé sur une estimation de marge en
+  dBc (modèle ; à valider sur site).
+- **Import de scan** (Shure WWB, Sennheiser WSM, RF Explorer, tinySA…) — le plan
+  évite automatiquement les pics et le bruit mesurés.
+- **Modes Standard / Avancé** — Avancé : **groupes**, **coordination par zone**,
+  garde IM réglable, fréquences réservées, placement manuel, prise en compte du
+  **combiner IEM**.
+- **Porteurs & feuille de scène** — affecter une personne/rôle à chaque liaison
+  (« Jean – voix lead »), couleurs, réordonnancement, export d'une feuille de
+  scène (PDF) avec porteur ↔ matériel ↔ fréquence/canal.
+- **Projet** — Enregistrer / Ouvrir un projet complet (`.rfshot.json`),
+  **Annuler / Rétablir**, menu Fichier.
+- **Interopérabilité** — export CSV universel + listes de fréquences pour
+  **Wireless Workbench** et **WSM**, et réimport d'un plan modifié.
+- **Aide intégrée** — vulgarisation RF, définitions des IM, rôle de la TNT.
 
 ## Structure
 
 ```
 EASYRF/
 ├── frontend/
-│   └── index.html        # App standalone (ouvrir dans le navigateur)
-└── backend/
-    ├── server.js         # Proxy ANFR (Node.js / Express)
-    └── package.json
+│   ├── index.html      # l'application (autonome)
+│   └── logo.svg        # logo RF SHOT
+├── backend/            # proxy ANFR local optionnel (Node/Express)
+├── relay/              # relais Deno (contourne le CORS Arcom en ligne)
+└── lib/                # catalogue / utilitaires
 ```
 
-## Utilisation
+## Source des données TNT
 
-L'application fonctionne directement dans le navigateur, sans rien installer.
-Une fois GitHub Pages activé (voir ci-dessous), ouvrir l'adresse publiée,
-entrer ses coordonnées GPS puis cliquer « Analyser TNT ».
+- `api-adresse.data.gouv.fr` — libellé de commune (informatif).
+- `matnt.arcom.fr` — canaux TNT reçus au point demandé (station, multiplex,
+  niveaux), appelé en direct depuis le navigateur, avec un **relais Deno** en
+  secours si l'appel direct est bloqué (CORS).
 
-### Activer le lien web (GitHub Pages)
-1. Dépôt GitHub → **Settings** → **Pages**
-2. **Build and deployment** → **Source** : choisir **GitHub Actions**
+Données : **Arcom** (ex-CSA) « Ma couverture TNT ».
+
+## Déploiement (GitHub Pages)
+
+1. Dépôt → **Settings → Pages**
+2. **Source** : **GitHub Actions**
 3. Le workflow `.github/workflows/pages.yml` publie le site à chaque push.
-   L'URL apparaît dans Settings → Pages (du type `https://arnisound.github.io/easyrf/`).
 
 ### Usage local (optionnel)
-Ouvrir `frontend/index.html` directement dans le navigateur. Si les appels
-directs à l'ANFR sont bloqués (CORS), lancer le backend de secours :
+
+Ouvrir `frontend/index.html` dans le navigateur. Si les appels directs à l'Arcom
+sont bloqués (CORS) et que vous ne voulez pas du relais Deno, lancer le proxy :
 
 ```bash
 cd backend && npm install && node server.js   # → http://localhost:3001
 ```
 
-## Source des données
+## Avertissement
 
-L'app utilise la même API que le site officiel [scanfrequences.anfr.fr](https://scanfrequences.anfr.fr/) :
-
-1. `api-adresse.data.gouv.fr/reverse/` — convertit les coordonnées GPS en code INSEE de commune
-2. `scanfrequences.anfr.fr/api/data?lat=&lng=&insee=` — renvoie les canaux TNT reçus à ce point (station, multiplex, niveaux indoor/outdoor en dBµV/m)
-
-Source des données : Arcom (ex-CSA) « Ma couverture TNT », via l'ANFR.
-
-## Fonctionnalités
-
-- **Géolocalisation** GPS ou saisie manuelle de coordonnées
-- **Données TNT** : canaux UHF C21–C48 (470–694 MHz) depuis l'ANFR
-- **Import de scans** : CSV de scan de spectre depuis Shure Wireless Workbench, Sennheiser WSM, RF Explorer, tinySA… (auto-détection du format)
-- **50+ modèles** de micros sans fil, du haut de gamme à l'entrée de gamme : Shure, Sennheiser, Sony, Audio-Technica, Wisycom, Lectrosonics, AKG, Mipro, beyerdynamic, the t.bone, LD Systems, Røde, DJI + retours IEM
-- **Calcul IM3 + IM5** : produits d'intermodulation ordres 3 et 5 (paires et triplets)
-- **Plan automatique** : placement optimal des porteuses avec les IM3/IM5 dirigés dans les canaux TV occupés ("poubelle")
-- **Tableau unifié** : canaux TNT + porteuses micros + produits IM triés par fréquence
-- **Visualisation spectre** : 470–694 MHz avec canaux, micros et IM
-- **Export CSV**
-
-## API Backend
-
-```
-GET /api/tnt?lat=43.9493&lon=4.8055
-GET /api/health
-```
+Aucun plan théorique n'est fiable à 100 % sans **test sur site** (émetteurs
+allumés un par un, éclairages en service). RF SHOT fournit le meilleur point de
+départ ; le terrain valide. Les niveaux dBc/étoiles sont **estimés par un
+modèle**, pas mesurés.
 
 ## Licence
+
 MIT
