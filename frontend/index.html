@@ -10,7 +10,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
   --blue:#185FA5;--blue-d:#0C447C;--green:#3B6D11;--red:#A32D2D;--amber:#854F0B;--purple:#534AB7;
-  --gold:#cb8a27;--gold-d:#a86f1c;--ink:#0d0d0d;
+  --gold:#cb8a27;--gold-d:#a86f1c;--gold-l:#e6ad3e;--ink:#0d0d0d;
   --bg:#fff;--bg2:#f7f7f5;--bg3:#f0efe9;
   --text:#1a1a18;--text2:#666;--text3:#999;
   --border:rgba(0,0,0,.12);--border2:rgba(0,0,0,.2);
@@ -44,13 +44,13 @@ select{padding:5px 8px;border:0.5px solid var(--border2);border-radius:var(--rad
 .btn:hover{background:var(--bg2)}
 .btn-blue{background:var(--blue);border-color:var(--blue);color:#fff}.btn-blue:hover{background:var(--blue-d)}
 .btn-green{background:var(--green);border-color:var(--green);color:#fff}.btn-green:hover{background:#27500A}
-.btn-purple{background:var(--gold);border-color:var(--gold);color:#1a1a18;font-weight:600}.btn-purple:hover{background:var(--gold-d)}
+.btn-purple{background:var(--gold-l);border-color:var(--gold-l);color:#1a1a18;font-weight:600}.btn-purple:hover{background:var(--gold)}
 .btn-xs{padding:3px 7px;font-size:11px}
 .sep{width:0.5px;height:20px;background:var(--border)}
 /* Bascule Standard / Avancé */
 .modesw{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden}
 .modesw button{border:none;background:transparent;color:var(--text2);font-size:11px;font-weight:600;padding:4px 11px;cursor:pointer}
-.modesw button.on{background:var(--gold);color:#1a1a18}
+.modesw button.on{background:var(--gold-l);color:#1a1a18}
 /* Éléments réservés au mode Avancé : masqués en mode Standard */
 body.mode-std .adv-only{display:none !important}
 /* Ligne surlignée dans la liste du Spectre avancé (survol/sélection porteuse) */
@@ -146,9 +146,6 @@ tr:hover td{background:var(--bg2)}
     <div class="modesw" id="modeSw" title="Standard : plan simple (~30 liaisons). Avancé : groupes, coordination par zone et options expert (100+ liaisons).">
       <button data-mode="std" class="on">Standard</button>
       <button data-mode="adv">Avancé</button>
-    </div>
-    <div class="backend-pill off" id="backendPill">
-      <div class="pulse"></div><span id="backendTxt">Données Arcom en direct</span>
     </div>
     <span style="font-size:10px;font-weight:700;color:var(--gold);border:1px solid var(--gold);border-radius:999px;padding:2px 8px;letter-spacing:.3px">V1.0 Beta</span>
   </div>
@@ -292,7 +289,7 @@ tr:hover td{background:var(--bg2)}
       <div class="leg-i" id="li3"><div class="leg-b" style="background:#854F0B99"></div>IM3 (2 émetteurs)</div>
       <div class="leg-i" id="li3t" style="display:none"><div class="leg-b" style="background:#534AB799"></div>3TX (3 émetteurs)</div>
       <div class="leg-i" id="li5" style="display:none"><div class="leg-b" style="background:#BA751766"></div>IM5</div>
-      <div class="leg-i" id="li7" style="display:none"><div class="leg-b" style="background:#BA751740"></div>IM7 (éducatif)</div>
+      <div class="leg-i" id="li7" style="display:none"><div class="leg-b" style="background:#BA751740"></div>IM7</div>
       <div class="leg-i"><div class="leg-b" style="background:#185FA5;height:2px;align-self:center"></div>Scan mesuré (importé)</div>
       <div class="leg-i" id="liLock" style="display:none"><i class="ti ti-lock" style="font-size:11px"></i>Porteuse verrouillée</div>
     </div>
@@ -329,6 +326,7 @@ tr:hover td{background:var(--bg2)}
       <div class="leg-i"><div class="leg-b" style="background:#854F0B99"></div>IM3 (2 émetteurs)</div>
       <div class="leg-i"><div class="leg-b" style="background:#534AB799"></div>3TX (3 émetteurs)</div>
       <div class="leg-i"><div class="leg-b" style="background:#BA751766"></div>IM5</div>
+      <div class="leg-i"><div class="leg-b" style="background:#BA751740"></div>IM7</div>
       <div class="leg-i"><div class="leg-b" style="background:#185FA5;height:2px;align-self:center"></div>Scan mesuré (importé)</div>
       <div class="leg-i"><i class="ti ti-lock" style="font-size:11px"></i>Porteuse verrouillée</div>
     </div>
@@ -720,8 +718,7 @@ async function checkBackend(){
     const r=await fetch(BACKEND+'/api/health',{signal:AbortSignal.timeout(2000)});
     if(r.ok){
       const pill=document.getElementById('backendPill');
-      pill.className='backend-pill ok';
-      document.getElementById('backendTxt').textContent='Backend local connecté';
+      if(pill){ pill.className='backend-pill ok'; const t=document.getElementById('backendTxt'); if(t)t.textContent='Backend local connecté'; }
     }
   }catch(_){}
 }
@@ -2339,7 +2336,7 @@ function renderTable(){
     if(im.ord===3&&im.f3==null&&!S.show3) return false; // IM3 (2 émetteurs)
     if(is3T&&!S.show3T) return false;           // 3TX
     if(im.ord===5&&!S.show5) return false;
-    if(im.ord===7&&!S.show7) return false;      // IM7 (éducatif)
+    if(im.ord===7&&!S.show7) return false;      // IM7
     if(S.onlyB&&(im.freq<470||im.freq>694)) return false;
     return true;
   });
