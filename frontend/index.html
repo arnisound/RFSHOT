@@ -438,6 +438,7 @@ tr:hover td{background:var(--bg2)}
         </select>
       </label>
       <button class="btn btn-xs" id="fpCsv"><i class="ti ti-download"></i> Exporter</button>
+      <button class="btn btn-xs btn-purple" id="fpPdf" title="Rapport / feuille de scène imprimable (PDF) avec logo et crédits"><i class="ti ti-file-text"></i> PDF</button>
       <button class="btn btn-xs" id="fpImport" title="Réimporter un plan (CSV) modifié dans un logiciel constructeur : les fréquences des liaisons de même nom sont mises à jour, les lignes inconnues ajoutées."><i class="ti ti-file-import"></i> Importer un plan</button>
       <input type="file" id="fpImportFile" accept=".csv,.txt,text/csv,text/plain" hidden>
     </div>
@@ -1581,18 +1582,33 @@ function exportReport(){
   const chanOf=m=>{ if(!isFinite(m.freq))return''; const c=S.ch.find(c=>m.freq>=c.freq_start&&m.freq<c.freq_end); return c?('C'+c.ch):''; };
   const rows=S.mics.map((m,i)=>`<tr><td>${i+1}</td><td>${esc(m.porteur||'—')}</td><td>${esc(m.name)}</td><td>${m.kind==='iem'?'IEM':'Micro'}</td><td>${esc((m.brand||'')+' '+(m.model||''))}</td><td class="f">${isFinite(m.freq)?m.freq.toFixed(3):'—'}${m.locked?' 🔒':''}</td><td>${chanOf(m)}</td><td>${m.fmin}–${m.fmax}</td><td>${stat(m)}</td></tr>`).join('');
   const ok=conf2===0&&conf3===0&&tnt===0;
-  const html=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Plan de fréquences HF — ${esc(date)}</title>
-  <style>body{font:13px/1.5 system-ui,sans-serif;color:#111;margin:24px;max-width:900px}
-  h1{font-size:19px;margin:0 0 2px}h2{font-size:14px;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:3px}
-  .sub{color:#666;font-size:12px;margin-bottom:14px}.kpi{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}
-  .b{border:1px solid #ddd;border-radius:6px;padding:6px 10px;font-size:12px}.ok{color:#2c6e0b}.warn{color:#a32d2d}
-  table{border-collapse:collapse;width:100%;font-size:12px;margin-top:6px}th,td{border:1px solid #ddd;padding:4px 7px;text-align:left}
-  th{background:#f4f4f6}td.f{font-family:ui-monospace,monospace;font-weight:600}
-  .no-print{margin:16px 0}button{padding:8px 16px;font-size:13px;cursor:pointer}
+  const logo=(document.querySelector('.logo-badge')||{}).outerHTML||'';
+  const metaRows=(typeof META_FIELDS!=='undefined'?META_FIELDS:[]).filter(([k])=>S.meta&&S.meta[k]).map(([k,lbl])=>`<div><span>${lbl}</span>${esc(S.meta[k])}</div>`).join('');
+  const html=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${esc((S.meta&&S.meta.title)||'Plan de fréquences')} — RF SHOT</title>
+  <style>
+  body{font:13px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;color:#1a1a18;margin:28px;max-width:920px}
+  .brand{display:flex;align-items:center;gap:16px;border-bottom:3px solid #cb8a27;padding-bottom:14px;margin-bottom:16px}
+  .brand .logo-badge{width:88px;height:88px;flex:none}
+  .brand-name{font-size:28px;font-weight:800;letter-spacing:-.5px;line-height:1}
+  .brand-sub{font-size:12px;color:#555;margin-top:4px}.brand-sub b{color:#a86f1c}
+  h1{font-size:17px;margin:18px 0 2px}h2{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:#a86f1c;margin:22px 0 6px;border-bottom:1px solid #e3e3e0;padding-bottom:4px}
+  .sub{color:#666;font-size:12px;margin-bottom:12px}
+  .meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:4px 18px;margin:6px 0 4px;font-size:12px}
+  .meta span{color:#999;margin-right:6px}
+  .kpi{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+  .b{border:1px solid #ddd;border-radius:6px;padding:6px 11px;font-size:12px;font-weight:600}.ok{color:#2c6e0b;border-color:#bcd9a6;background:#f3f9ee}.warn{color:#a32d2d;border-color:#e3b3b3;background:#fbf1f1}
+  table{border-collapse:collapse;width:100%;font-size:12px;margin-top:6px}th,td{border:1px solid #e3e3e0;padding:5px 8px;text-align:left}
+  th{background:#faf7ef;color:#7a5a12}td.f{font-family:ui-monospace,monospace;font-weight:700}
+  tr:nth-child(even) td{background:#fcfcfb}
+  .credits{margin-top:26px;padding-top:12px;border-top:1px solid #e3e3e0;font-size:11px;color:#888;line-height:1.6}
+  .credits b{color:#a86f1c}
+  .no-print{margin:0 0 16px}button{padding:9px 18px;font-size:13px;cursor:pointer;background:#e6ad3e;border:1px solid #cb8a27;border-radius:7px;font-weight:600}
   @media print{.no-print{display:none}body{margin:0}}</style></head><body>
   <div class="no-print"><button onclick="print()">🖨️ Imprimer / Enregistrer en PDF</button></div>
-  <h1>📡 Plan de fréquences HF</h1>
+  <div class="brand">${logo}<div><div class="brand-name">RF SHOT</div><div class="brand-sub">Coordinateur PMSE · France — <b>by ARNISOUND TOOLS</b> · LIVE &amp; AV APP</div></div></div>
+  <h1>${esc((S.meta&&S.meta.title)||'Plan de fréquences HF')}</h1>
   <div class="sub">Édité le ${esc(date)} · ${S.mics.length} liaison(s) · localisation ${S.lat.toFixed(4)}, ${S.lon.toFixed(4)} · ${occ} canaux TNT occupés${S.scan?(' · scan « '+esc(S.scan.name)+' »'+(S.useScanBlock?' (plan calé)':'')):''}</div>
+  ${metaRows?`<div class="meta">${metaRows}</div>`:''}
   <div class="kpi">
     <span class="b ${ok?'ok':'warn'}">${ok?'✓ Plan sans conflit détecté':'⚠ '+(conf2+conf3+tnt)+' conflit(s) à revoir'}</span>
     <span class="b">${conf2} IM 2 tons</span><span class="b">${conf3} 3TX</span><span class="b">${tnt} sur canal TNT</span>
@@ -1602,7 +1618,8 @@ function exportReport(){
   <h2>Fréquences de secours (coordonnées)</h2>
   <div>${spares.length?spares.map(f=>f.toFixed(3)+' MHz').join(' · '):'—'}</div>
   <h2>Méthode</h2>
-  <div class="sub">Coordination : TNT France (Arcom) + scan mesuré · IM3/IM5/IM7 (2 tons) + 3TX (fA+fB−fC) écartées des porteuses · à tester sur site, émetteurs allumés un à un, dimmers/LED actifs.</div>
+  <div class="sub">Coordination : TNT France (Arcom) + scan mesuré · IM3/IM5/IM7 (2 tons) + 3TX (fA+fB−fC) écartées des porteuses · niveaux estimés par modèle. À tester sur site, émetteurs allumés un à un, dimmers/LED actifs.</div>
+  <div class="credits"><b>RF SHOT</b> — by Arnisound Tools · Live &amp; AV App · Coordinateur de fréquences PMSE France.<br>Rapport généré le ${esc(date)} · arnisound.github.io/EASYRF · Données TNT : Arcom (« Ma TNT »).<br>Les niveaux d'intermodulation (dBc / étoiles) sont des estimations ; la validation finale se fait sur site.</div>
   </body></html>`;
   const w=window.open('','_blank');
   if(!w){ setSt('Autorisez les pop-ups pour générer le rapport.'); return; }
@@ -1610,6 +1627,7 @@ function exportReport(){
   setSt('Rapport généré — utilisez « Imprimer / PDF ».');
 }
 document.getElementById('reportBtn').onclick=exportReport;
+document.getElementById('fpPdf').onclick=exportReport;
 document.getElementById('applyBtn').onclick=applyPlan;
 document.getElementById('autoBtn').onclick=()=>{showTab('plan');generateAuto();};
 function updateGuardInfo(){ const el=document.getElementById('guardInfo'); if(el) el.textContent='→ garde effective '+Math.round(imGuardMHz()*1000)+' kHz'; }
@@ -3081,12 +3099,16 @@ META_FIELDS.forEach(([k])=>{
 function exportPlanCsv(){
   const q=v=>'"'+String(v||'').replace(/"/g,'""')+'"';
   const rows=[];
+  rows.push('RF SHOT — Coordinateur PMSE France — by ARNISOUND TOOLS · LIVE & AV APP');
+  rows.push('');
   META_FIELDS.forEach(([k,lbl])=>{if(S.meta[k])rows.push(lbl+','+q(S.meta[k]));});
   rows.push('Position GPS,'+q(S.lat+', '+S.lon));
   rows.push('Exporté le,'+q(new Date().toLocaleString('fr-FR')));
   rows.push('');
   rows.push('Nom,Porteur,Marque,Modèle,Gamme,Fréquence (MHz),Plage min,Plage max,Espacement (kHz),Conflit TNT,IM 2 tons,IM 3 tons');
   S.mics.forEach(m=>rows.push(`${q(m.name)},${q(m.porteur||'')},${m.brand||''},${m.model||''},${m.band||''},${m.freq},${m.fmin},${m.fmax},${m.spacing||m.bw},${m.tntConflict?'OUI':'non'},${m.imHits?m.imHits.length:0},${m.imHits3?m.imHits3.length:0}`));
+  rows.push('');
+  rows.push('Généré par RF SHOT (by Arnisound Tools · Live & AV App) · arnisound.github.io/EASYRF · Données TNT : Arcom. Niveaux IM estimés — à valider sur site.');
   const b=new Blob([rows.join('\n')],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');a.href=URL.createObjectURL(b);
   const slug=(S.meta.title||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
