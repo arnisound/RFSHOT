@@ -255,6 +255,7 @@ tr:hover td{background:var(--bg2)}
   <div class="tab" data-t="plan"><i class="ti ti-adjustments"></i> Coordination</div>
   <div class="tab adv-only" data-t="groups"><i class="ti ti-layout-grid"></i> Groupes</div>
   <div class="tab" data-t="fplan"><i class="ti ti-edit"></i> Plan fréquences</div>
+  <div class="tab" data-t="help" style="margin-left:auto"><i class="ti ti-help-circle"></i> Aide</div>
 </div>
 
 <!-- TABLE -->
@@ -455,6 +456,67 @@ tr:hover td{background:var(--bg2)}
       <label style="font-size:10px;color:var(--text2);display:flex;flex-direction:column;gap:3px">Contact coordinateur<input id="fp_contact" type="text" placeholder="Téléphone / e-mail"></label>
     </div>
     <div class="tbl-sc" id="fplanWrap"></div>
+  </div>
+</div>
+
+<!-- AIDE -->
+<div class="pane" id="pane-help">
+  <div style="max-width:900px;padding:20px 22px;line-height:1.6;color:var(--text2);font-size:13px">
+    <div style="font-size:20px;font-weight:800;color:var(--text);letter-spacing:-.3px">Aide &amp; vulgarisation RF</div>
+    <p style="margin-top:6px">RF SHOT coordonne les fréquences de vos liaisons HF (micros sans fil &amp; oreillettes IEM) en France, dans les bandes UHF autorisées au son (PMSE). Le but : trouver à chaque liaison une fréquence <b>propre</b> — sans TNT, sans interférence entre liaisons — et sortir un plan fiable.</p>
+
+    <div style="font-size:15px;font-weight:700;color:var(--text);margin:24px 0 6px;border-left:3px solid var(--gold);padding-left:9px">1 · Comment marche l'application</div>
+    <p>Le déroulé type, en 5 étapes :</p>
+    <ol style="margin:4px 0 0 18px">
+      <li><b>Localiser la TNT</b> : entrez la ville/GPS et « Analyser TNT » → l'app récupère les canaux télé occupés à cet endroit (données Arcom en direct).</li>
+      <li><b>Ajouter le matériel</b> : choisissez vos micros / IEM (marque, modèle, gamme) ou une bande manuelle.</li>
+      <li><b>Coordination</b> : « Générer (auto) » calcule un plan de fréquences sans conflit.</li>
+      <li><b>Affiner avec un scan</b> (optionnel) : importez un relevé de spectre (Shure WWB, WSM, RF Explorer, tinySA…) ; l'app évite alors aussi les pics et le bruit mesurés sur place.</li>
+      <li><b>Exporter</b> : feuille de scène (PDF), CSV, ou liste de fréquences pour Wireless Workbench / WSM. Enregistrez le projet (.rfshot.json) pour le retravailler.</li>
+    </ol>
+    <p style="margin-top:6px"><b>Mode Standard</b> = plan simple (clé en main). <b>Mode Avancé</b> = groupes, coordination par zone, garde réglable, placement manuel (pour les gros plans / multi-scènes).</p>
+
+    <div style="font-size:15px;font-weight:700;color:var(--text);margin:24px 0 6px;border-left:3px solid var(--gold);padding-left:9px">2 · L'algorithme de coordination</div>
+    <p>L'app place les liaisons une par une, des plus contraintes (plage étroite) aux plus libres. Pour chacune, elle cherche une fréquence qui :</p>
+    <ul style="margin:4px 0 0 18px">
+      <li>n'est pas sur un canal TNT occupé ni dans une zone bruitée du scan ;</li>
+      <li>ne crée <b>aucune intermodulation</b> tombant sur une autre porteuse ;</li>
+      <li><b>« range » les IM inévitables</b> dans les canaux TNT déjà occupés (où elles sont sans danger) ou les concentre dans quelques canaux libres « sacrifiés » — c'est le <i>packing</i>, qui libère un maximum de place pour caser plus de liaisons.</li>
+    </ul>
+    <p style="margin-top:6px">« Générer (auto) » essaie plusieurs stratégies et plusieurs tirages (<i>best-of-N</i>) et garde le meilleur (capacité d'abord, puis fiabilité). Modes experts : <b>Standard</b>, <b>Avancée</b> (zéro IM 3 sources), <b>Robuste</b> (ajoute l'IM7), <b>Capacité max</b>.</p>
+    <p><b>Le score de fiabilité (0 à 5 ★)</b> estime la marge entre l'IM la plus forte et la porteuse, en <b>dBc</b> (niveau sous la porteuse). 5★ = porteuse sûre, 0★ = interférences. <span style="color:var(--amber)">⚠ Ce sont des niveaux estimés par un modèle, pas une mesure : à valider sur site.</span></p>
+
+    <div style="font-size:15px;font-weight:700;color:var(--text);margin:24px 0 6px;border-left:3px solid var(--gold);padding-left:9px">3 · Les intermodulations (IM)</div>
+    <p>Quand deux émetteurs (ou plus) fonctionnent ensemble, leurs signaux se mélangent dans les étages HF et créent de <b>nouvelles fréquences parasites</b> : les produits d'intermodulation. S'ils tombent sur une porteuse, on entend des sifflements / décrochages. L'app les calcule et les évite.</p>
+    <ul style="margin:4px 0 0 18px">
+      <li><span class="badge bIM3">IM3</span> <b>2fA − fB</b> (2 émetteurs) — produit du 3<sup>e</sup> ordre, <b>le plus fort</b> et le plus gênant.</li>
+      <li><span class="badge bIM5">IM5</span> <b>3fA − 2fB</b> (2 émetteurs) — 5<sup>e</sup> ordre, plus faible.</li>
+      <li><span class="badge b3TX">3TX</span> <b>fA + fB − fC</b> (3 émetteurs) — n'apparaît que si <b>trois</b> émetteurs proches émettent en même temps : situationnel.</li>
+      <li><span class="badge bIM5">IM7</span> <b>4fA − 3fB</b> (2 émetteurs) — 7<sup>e</sup> ordre, très faible (≈ −22 dBc). Affichable en option ; même Workbench ne le calcule pas.</li>
+    </ul>
+    <p style="margin-top:6px">Règle clé : plus l'ordre est élevé, plus le produit est faible. Et <b>la puissance compte</b> : éloigner ou baisser les émetteurs réduit fortement les IM (−3 dB d'émission ≈ −9 dB sur l'IM3).</p>
+
+    <div style="font-size:15px;font-weight:700;color:var(--text);margin:24px 0 6px;border-left:3px solid var(--gold);padding-left:9px">4 · Les émetteurs TNT</div>
+    <p>La TNT (télévision) occupe la même bande UHF (470–694 MHz) que les micros HF. À chaque endroit, certains <b>canaux de 8 MHz</b> (C21 à C48) sont utilisés par des émetteurs télé puissants : impossible d'y mettre un micro, on serait noyé.</p>
+    <ul style="margin:4px 0 0 18px">
+      <li>L'app interroge la base <b>Arcom</b> (« Ma TNT ») pour connaître les canaux occupés à vos coordonnées.</li>
+      <li>Les canaux <span class="badge bTV">occupés</span> sont interdits ; les canaux <span class="badge bFree">libres</span> sont exploitables (c'est le « <b>white space</b> » qu'on utilise).</li>
+      <li>Astuce avancée : « Émetteurs ≤ X km » ignore les émetteurs lointains et faibles, qui libèrent en pratique leurs canaux.</li>
+    </ul>
+    <p style="margin-top:6px">Un message s'affiche à côté d'une liaison si <b>toute sa plage est saturée par la TNT</b> à cet endroit (modèle inutilisable ici).</p>
+
+    <div style="font-size:15px;font-weight:700;color:var(--text);margin:24px 0 6px;border-left:3px solid var(--gold);padding-left:9px">5 · Notions RF essentielles</div>
+    <ul style="margin:4px 0 0 18px">
+      <li><b>Fréquence / porteuse (MHz)</b> : la « radio » sur laquelle émet la liaison. Deux porteuses trop proches se gênent.</li>
+      <li><b>Bande passante &amp; espacement</b> : chaque liaison occupe une largeur ; on garde un écart minimum entre porteuses (espacement constructeur).</li>
+      <li><b>Garde IM</b> : distance de sécurité entre un produit IM et une porteuse. Émetteurs serrés ⇒ IM plus fortes ⇒ garde élargie ; éloignés ⇒ garde resserrée (plus de capacité).</li>
+      <li><b>Bandes autorisées en France</b> : <b>470–694 MHz</b> (UHF, partagé avec la TNT, à coordonner) · <b>823–832 MHz</b> (PMSE, déclaration) · <b>863–865 MHz</b> (libre, sans licence) · <b>1785–1805 MHz</b> (1G8). La bande 700 (694–790) est <b>interdite</b> (4G/5G).</li>
+      <li><b>2,4 GHz</b> (Røde, DJI…) : non coordonnable ici — ces systèmes sautent de fréquence automatiquement et partagent la bande Wi-Fi.</li>
+      <li><b>Combiner IEM</b> : un combineur d'antenne isole les émetteurs IEM entre eux et réduit fortement leur intermod ; l'app en tient compte (option « IEM sans combiner » pour le pire cas).</li>
+      <li><b>Scan</b> : un relevé du spectre réel sur place. Il révèle les signaux que la base TNT ne connaît pas (radios locales, autres prods, intercom) ; l'app cale le plan dessus.</li>
+    </ul>
+
+    <p style="margin:22px 0 0;padding:10px 12px;background:var(--bg2);border-radius:8px;font-size:12px"><b>Rappel pro :</b> aucun plan théorique n'est fiable à 100 % sans <b>test sur site</b> — émetteurs allumés un par un, avec les éclairages (dimmers/LED) en service. RF SHOT vous donne le meilleur point de départ ; le terrain valide.</p>
   </div>
 </div>
 
