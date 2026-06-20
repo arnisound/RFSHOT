@@ -1597,9 +1597,12 @@ function exportReport(){
   .meta span{color:#999;margin-right:6px}
   .kpi{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
   .b{border:1px solid #ddd;border-radius:6px;padding:6px 11px;font-size:12px;font-weight:600}.ok{color:#2c6e0b;border-color:#bcd9a6;background:#f3f9ee}.warn{color:#a32d2d;border-color:#e3b3b3;background:#fbf1f1}
-  table{border-collapse:collapse;width:100%;font-size:12px;margin-top:6px}th,td{border:1px solid #e3e3e0;padding:5px 8px;text-align:left}
-  th{background:#faf7ef;color:#7a5a12}td.f{font-family:ui-monospace,monospace;font-weight:700}
-  tr:nth-child(even) td{background:#fcfcfb}
+  table{border-collapse:collapse;width:100%;font-size:11px;margin-top:6px}
+  th,td{border:1px solid #e3e3e0;padding:2px 7px;text-align:left;line-height:1.25;vertical-align:middle}
+  th{background:#faf7ef;color:#7a5a12;padding:4px 7px}td.f{font-family:ui-monospace,monospace;font-weight:700;white-space:nowrap}
+  tbody tr:nth-child(odd) td{background:#f3f1ea}
+  tr{page-break-inside:avoid}
+  @page{size:A4;margin:12mm}
   .credits{margin-top:26px;padding-top:12px;border-top:1px solid #e3e3e0;font-size:11px;color:#888;line-height:1.6}
   .credits b{color:#a86f1c}
   .no-print{margin:0 0 16px}button{padding:9px 18px;font-size:13px;cursor:pointer;background:#e6ad3e;border:1px solid #cb8a27;border-radius:7px;font-weight:600}
@@ -1613,7 +1616,7 @@ function exportReport(){
     <span class="b ${ok?'ok':'warn'}">${ok?'✓ Plan sans conflit détecté':'⚠ '+(conf2+conf3+tnt)+' conflit(s) à revoir'}</span>
     <span class="b">${conf2} IM 2 tons</span><span class="b">${conf3} 3TX</span><span class="b">${tnt} sur canal TNT</span>
   </div>
-  <h2>Feuille de scène</h2>
+  <h2>Plan de fréquences</h2>
   <table><thead><tr><th>#</th><th>Porteur</th><th>Liaison</th><th>Type</th><th>Matériel</th><th>Fréquence (MHz)</th><th>Canal</th><th>Plage</th><th>Statut</th></tr></thead><tbody>${rows}</tbody></table>
   <h2>Fréquences de secours (coordonnées)</h2>
   <div>${spares.length?spares.map(f=>f.toFixed(3)+' MHz').join(' · '):'—'}</div>
