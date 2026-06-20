@@ -133,6 +133,41 @@ tr:hover td{background:var(--bg2)}
 .backend-pill.off{color:var(--amber);border-color:rgba(133,79,11,.3);background:rgba(133,79,11,.06)}
 .pulse{width:6px;height:6px;border-radius:50%;background:currentColor;animation:pulse 1.8s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── RESPONSIVE : tablette & téléphone ───────────────────────────────── */
+/* Listes/plans larges : défilement horizontal au lieu de déborder la page */
+#advMicList{overflow-x:auto}
+@media(max-width:900px){
+  .main{padding:10px}
+  .app{border-radius:10px}
+  .header{flex-wrap:wrap;gap:8px;padding:6px 12px}
+  .logo-badge{height:58px;width:58px}
+  .toolbar{padding:8px 10px}
+  /* onglets : défilement horizontal tactile, l'onglet Aide reste en bout */
+  .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+  .tab{white-space:nowrap;flex:0 0 auto}
+  .tab[data-t="help"]{margin-left:0}
+}
+@media(max-width:600px){
+  .header{padding:5px 10px;gap:6px}
+  .logo{gap:8px}
+  .logo-badge{height:44px;width:44px}
+  .header-sub{font-size:10px}
+  .header-sub>div{display:none}            /* masque « by Arnisound… » sur petit écran */
+  .main{padding:6px}
+  .app{border-radius:8px}
+  .tab{padding:8px 12px;font-size:12px}
+  .btn{padding:7px 11px}                    /* cibles tactiles un peu plus grandes */
+  .btn-xs{padding:6px 9px;font-size:12px}
+  .add-bar select,.add-bar input[type=text]{flex:1 1 130px;max-width:none;min-width:0}
+  .modesw button{padding:5px 10px}
+  table{font-size:11px}
+  th,td{padding:5px 6px}
+  .tbl-sc{max-height:60vh}
+  .grp-cards{grid-template-columns:1fr}
+  .menu{min-width:190px}
+  .spec-pad,.plan-pad{padding:10px}
+}
 </style>
 </head>
 <body>
