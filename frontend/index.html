@@ -3101,19 +3101,30 @@ META_FIELDS.forEach(([k])=>{
 });
 
 function exportPlanCsv(){
-  const q=v=>'"'+String(v||'').replace(/"/g,'""')+'"';
+  const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const kv=(k,v)=>q(k)+','+q(v);
+  const chanOf=m=>{ if(!isFinite(m.freq))return''; const c=S.ch.find(c=>m.freq>=c.freq_start&&m.freq<c.freq_end); return c?('C'+c.ch):''; };
   const rows=[];
-  rows.push('RF SHOT — Coordinateur PMSE France — by ARNISOUND TOOLS · LIVE & AV APP');
+  // En-tête : métadonnées en clé/valeur (2 colonnes propres) — n'élargit pas le tableau.
+  rows.push(kv('RF SHOT','Plan de fréquences'));
+  rows.push(kv('Édité par','Arnisound Tools — Live & AV App'));
+  META_FIELDS.forEach(([k,lbl])=>{ if(S.meta[k]) rows.push(kv(lbl,S.meta[k])); });
+  rows.push(kv('Latitude',S.lat));
+  rows.push(kv('Longitude',S.lon));
+  rows.push(kv('Exporté le',new Date().toLocaleString('fr-FR')));
+  rows.push(kv('Source TNT','Arcom (Ma TNT)'));
+  rows.push(kv('Note','Niveaux IM estimés (modèle) — à valider sur site'));
   rows.push('');
-  META_FIELDS.forEach(([k,lbl])=>{if(S.meta[k])rows.push(lbl+','+q(S.meta[k]));});
-  rows.push('Position GPS,'+q(S.lat+', '+S.lon));
-  rows.push('Exporté le,'+q(new Date().toLocaleString('fr-FR')));
-  rows.push('');
-  rows.push('Nom,Porteur,Marque,Modèle,Gamme,Fréquence (MHz),Plage min,Plage max,Espacement (kHz),Conflit TNT,IM 2 tons,IM 3 tons');
-  S.mics.forEach(m=>rows.push(`${q(m.name)},${q(m.porteur||'')},${m.brand||''},${m.model||''},${m.band||''},${m.freq},${m.fmin},${m.fmax},${m.spacing||m.bw},${m.tntConflict?'OUI':'non'},${m.imHits?m.imHits.length:0},${m.imHits3?m.imHits3.length:0}`));
-  rows.push('');
-  rows.push('Généré par RF SHOT (by Arnisound Tools · Live & AV App) · arnisound.github.io/EASYRF · Données TNT : Arcom. Niveaux IM estimés — à valider sur site.');
-  const b=new Blob([rows.join('\n')],{type:'text/csv;charset=utf-8;'});
+  // Tableau de données : colonnes homogènes, chaque cellule entre guillemets.
+  const head=['#','Nom','Porteur','Type','Marque','Modèle','Gamme','Fréquence (MHz)','Canal','Plage min (MHz)','Plage max (MHz)','Espacement (kHz)','Conflit TNT','IM 2 tons','IM 3 tons'];
+  rows.push(head.map(q).join(','));
+  S.mics.forEach((m,i)=>{
+    rows.push([i+1, m.name, m.porteur||'', m.kind==='iem'?'IEM':'Micro', m.brand||'', m.model||'', m.band||'',
+      isFinite(m.freq)?m.freq.toFixed(3):'', chanOf(m), m.fmin, m.fmax, m.spacing||m.bw,
+      m.tntConflict?'OUI':'non', m.imHits?m.imHits.length:0, m.imHits3?m.imHits3.length:0].map(q).join(','));
+  });
+  // BOM UTF-8 (accents OK dans Excel) + CRLF pour la compatibilité tableur.
+  const b=new Blob(['﻿'+rows.join('\r\n')],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');a.href=URL.createObjectURL(b);
   const slug=(S.meta.title||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
   a.download=(slug||'rfshot_plan')+'_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
