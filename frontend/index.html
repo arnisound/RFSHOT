@@ -1608,6 +1608,10 @@ function exportReport(){
   computeIM();
   const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const date=new Date().toLocaleString('fr-FR');
+  // URL du site calculée à l'exécution → robuste au renommage du dépôt (pas d'URL en dur).
+  const siteUrl=(location.protocol==='http:'||location.protocol==='https:')
+    ? (location.host+location.pathname.replace(/\/index\.html$/i,'').replace(/\/$/,''))
+    : 'arnisound.github.io';
   const occ=S.ch.filter(c=>c.occupied).length;
   const conf2=S.mics.filter(m=>m.imHits&&m.imHits.length).length;
   const conf3=S.mics.filter(m=>m.imHits3&&m.imHits3.length).length;
@@ -1658,7 +1662,7 @@ function exportReport(){
   <div>${spares.length?spares.map(f=>f.toFixed(3)+' MHz').join(' · '):'—'}</div>
   <h2>Méthode</h2>
   <div class="sub">Coordination : TNT France (Arcom) + scan mesuré · IM3/IM5/IM7 (2 tons) + 3TX (fA+fB−fC) écartées des porteuses · niveaux estimés par modèle. À tester sur site, émetteurs allumés un à un, dimmers/LED actifs.</div>
-  <div class="credits"><b>RF SHOT</b> — by Arnisound Tools · Live &amp; AV App · Coordinateur de fréquences RF (PMSE) France.<br>Rapport généré le ${esc(date)} · arnisound.github.io/EASYRF · Données TNT : Arcom (« Ma TNT »).<br>Les niveaux d'intermodulation (dBc / étoiles) sont des estimations ; la validation finale se fait sur site.</div>
+  <div class="credits"><b>RF SHOT</b> — by Arnisound Tools · Live &amp; AV App · Coordinateur de fréquences RF (PMSE) France.<br>Rapport généré le ${esc(date)} · ${esc(siteUrl)} · Données TNT : Arcom (« Ma TNT »).<br>Les niveaux d'intermodulation (dBc / étoiles) sont des estimations ; la validation finale se fait sur site.</div>
   </body></html>`;
   const w=window.open('','_blank');
   if(!w){ setSt('Autorisez les pop-ups pour générer le rapport.'); return; }
