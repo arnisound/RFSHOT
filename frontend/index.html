@@ -1586,6 +1586,7 @@ function exportReport(){
   const metaRows=(typeof META_FIELDS!=='undefined'?META_FIELDS:[]).filter(([k])=>S.meta&&S.meta[k]).map(([k,lbl])=>`<div><span>${lbl}</span>${esc(S.meta[k])}</div>`).join('');
   const html=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${esc((S.meta&&S.meta.title)||'Plan de fréquences')} — RF SHOT</title>
   <style>
+  *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}
   body{font:13px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;color:#1a1a18;margin:28px;max-width:920px}
   .brand{display:flex;align-items:center;gap:16px;border-bottom:3px solid #cb8a27;padding-bottom:14px;margin-bottom:16px}
   .brand .logo-badge{width:88px;height:88px;flex:none}
