@@ -25,10 +25,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Préparer le site (index.html à la racine du site)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build obfusqué (le moteur n'est pas lisible sur le site publié)
         run: |
-          mkdir -p _site
-          cp frontend/index.html _site/index.html
+          npm i --no-save javascript-obfuscator@4
+          node tools/build.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -1,7 +1,12 @@
 # Node
+node_modules/
 backend/node_modules/
 backend/npm-debug.log*
 backend/.env
+package-lock.json
+
+# Build output (site obfusqué généré par tools/build.mjs)
+_site/
 
 # OS
 .DS_Store
