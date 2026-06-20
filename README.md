@@ -1,11 +1,11 @@
 # RF SHOT — Coordinateur PMSE RF France
 *by ARNISOUND TOOLS — LIVE & AV APP*
 
-### 👉 [OUVRIR L'APPLICATION](https://arnisound.github.io/RF-SHOT/)
+### 👉 [OUVRIR L'APPLICATION](https://arnisound.github.io/RFSHOT/)
 
 > ⚠️ L'application **n'est pas cette page**. Cette page (sur `github.com`) affiche
 > seulement le code. Pour lancer l'app, clique sur le lien ci-dessus — il ouvre
-> `arnisound.github.io/RF-SHOT/`, où se trouve le bouton « Analyser TNT ».
+> `arnisound.github.io/RFSHOT/`, où se trouve le bouton « Analyser TNT ».
 
 ---
 
@@ -52,7 +52,7 @@ Application **100 % navigateur**, sans installation. Tout le calcul est local.
 ## Structure
 
 ```
-RF-SHOT/
+RFSHOT/
 ├── frontend/
 │   ├── index.html      # l'application (autonome)
 │   └── logo.svg        # logo RF SHOT
