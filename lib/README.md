@@ -7,8 +7,8 @@ réutiliser dans un autre projet (artefact, app, script Node…) :
 |---|---|
 | `rfshot-tnt.js` | **API données** — interroge l'API publique Arcom « Ma couverture TNT » et renvoie la grille des canaux UHF occupés/libres. |
 | `rfshot-scan.js` | **Import scans** — parse les exports CSV de scan de spectre (Shure WWB, Sennheiser WSM, RF Explorer, tinySA…) avec auto-détection du format. |
-| `rfshot-coordination.js` | **Algorithme** — calcule des plans de fréquences micros/IEM en évitant les intermodulations (IM). |
-| `rfshot-catalog.js` | **Base de données** — micros HF / IEM les plus utilisés en France (16 marques, 166 gammes), du haut de gamme au matériel d'entrée de gamme (the t.bone, LD Systems), avec leur espacement de coordination. |
+| `rfshot-coordination.js` | **Moteur** — plan auto rapide & fiable : packing IM (IM3/IM5/IM7 + 3TX dirigés vers la TNT occupée / canaux sacrifiés), score de fiabilité en dBc, optimisation best-of-N. |
+| `rfshot-catalog.js` | **Base de données** — micros HF / IEM utilisés en France (16 marques micros / 53 modèles + 10 marques IEM / 25 modèles), du tournage cinéma (Audio Ltd A10, Sennheiser SK 5212-II…) à l'amateur (the t.bone, LD Systems, Behringer, Prodipe, Sirus…), avec espacement (sp) et pas d'accord (st). 2,4 GHz exclu. |
 | `rfshot-relay.ts` | Relais CORS optionnel (Deno Deploy) si l'appel direct navigateur est bloqué. |
 
 Compatibles navigateur (ESM) et Node ≥ 18 (`fetch`/`AbortSignal.timeout` natifs).
@@ -39,34 +39,36 @@ const ignored = applyExclusion(channels, 43.6105, 3.8705, 60);
 ## 2. Coordonner les fréquences
 
 ```js
-import { generatePlan, assignFrequency, computeIM, imHitsPerCarrier } from './rfshot-coordination.js';
+import { autoPlan, generatePlan, applyPlan, computeIM } from './rfshot-coordination.js';
+import { toMic, IEM_CATALOG } from './rfshot-catalog.js';
 
+// Liaisons : depuis le catalogue (toMic) ou à la main { fmin, fmax, spacing }.
 const mics = [
-  { name: 'HH 1', fmin: 470, fmax: 534, spacing: 350 }, // Shure ULX-D G51
-  { name: 'HH 2', fmin: 470, fmax: 534, spacing: 350 },
-  { name: 'BP 1', fmin: 606, fmax: 678, spacing: 600 }, // Sennheiser EW-DX
-  // …jusqu'à ~50 micros
+  toMic('Shure', 'Axient Digital', 0, { name: 'Lead' }),     // micro
+  toMic('Sennheiser', '2000 IEM', 2, { name: 'IEM 1', kind: 'iem' }, IEM_CATALOG),
+  { name: 'Libre', fmin: 470, fmax: 534, spacing: 350 },     // ou à la main
 ];
 
-// Plan standard : zéro IM 2 tons sur porteuse, IM dirigées vers les canaux TV
-const { placed, slots, stats } = generatePlan(mics, channels);
-// placed[i] = fréquence (MHz) du micro i, ou null si non plaçable
-// stats = { nOK, nKO, imTV, imFree, sacrificed:[canaux], res3, res5, advanced }
+// Plan AUTO (recommandé) : packing + best-of-N, retient le meilleur plan.
+const plan = autoPlan(mics, channels);
+applyPlan(mics, plan);                 // écrit mic.freq pour les placés
+// plan = { placed[], freqs[], nOK, nKO, mode:'std'|'adv'|'max', seed,
+//          reliab:{ grade, dbc, marginKHz, res2, res3, value }, imTV, imFree, sacr }
+console.log(`${plan.nOK}/${mics.length} · ${plan.reliab.grade} · ${plan.reliab.dbc} dBc`);
 
-// Plan avancé : interdit aussi toute IM 3 sources sur porteuse + minimise les IM5
-const strict = generatePlan(mics, channels, { advanced: true });
-
-// Régénérer un plan différent (tirage aléatoire)
-const autre = generatePlan(mics, channels, { shuffle: true });
+// Contrôle fin de generatePlan(mics, channels, opts) :
+generatePlan(mics, channels, { mode: 'rob' });           // robuste (ajoute l'IM7)
+generatePlan(mics, channels, { coord: { txDist: 'tight', iemNoCombiner: true } });
+generatePlan(mics, channels, { scanSpans: [[600, 605]] });   // zones d'un scan à éviter
+generatePlan(mics, channels, { reserved: [486.5] });         // fréquences à éviter partout
+generatePlan(mics, channels, { shuffle: true, seed: 7 });    // tirage reproductible
 ```
 
-Ajout d'une seule fréquence à un parc existant (workflow « au fil de l'eau ») :
+Inspecter les produits d'intermodulation d'un jeu de fréquences :
 
 ```js
-const f = assignFrequency(470, 534, 350, {
-  channels,
-  used: [{ f: 471.200, spacing: 350 }, { f: 472.000, spacing: 350 }],
-}); // → 472.8 (ou null si saturé)
+const im = computeIM([495.5, 500.0, 510.3], { im7: true });
+// [{ ord, kind:'IM3'|'IM5'|'3TX'|'IM7', freq, src:[i,j(,k)] }, …]
 ```
 
 Audit des intermodulations d'un plan fini :
